@@ -9,7 +9,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TOKEN")
-BASE_URL  = os.environ.get("BASE_URL", "https://ip-eb0c.onrender.com")
+BASE_URL  = os.environ.get("BASE_URL", "https://ip-xzb3.onrender.com")
 ADMIN_ID  = 8768764605
 CHANNELS  = ["@BDCyberSite", "@EdusTech"]
 
