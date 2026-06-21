@@ -10,7 +10,7 @@ from datetime import datetime
 
 # ===================== CONFIG =====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-BASE_URL   = os.environ.get("BASE_URL",  "https://your-app.onrender.com")
+BASE_URL   = os.environ.get("BASE_URL",  "https://ip-eb0c.onrender.com")
 # BASE_URL = Render এ deploy করার পর যে URL পাবে সেটা
 
 bot = telebot.TeleBot(BOT_TOKEN)
