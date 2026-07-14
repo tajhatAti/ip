@@ -57,7 +57,7 @@ class UserLogin(BaseModel):
 def read_index():
     return FileResponse("index.html")
 
-# উন্নত ও দ্রুত ইমেইল পাঠানোর ফাংশন (টাইমআউটসহ)
+# গুগল সিকিউরিটি বাইপাস ও দ্রুত কানেকশন ফাংশন
 def send_otp_email(receiver_email: str, otp: str):
     sender_email = "editsupra93@gmail.com"
     app_password = os.getenv("EMAIL_PASS")
@@ -71,22 +71,25 @@ def send_otp_email(receiver_email: str, otp: str):
     msg['To'] = receiver_email
 
     try:
-        # এখানে ৫ সেকেন্ডের একটা সময়সীমা দেওয়া হয়েছে যাতে আটকে না থাকে
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=5)
+        # TLS (Port 587) ব্যবহার করা হচ্ছে যা ক্লাউড সার্ভারের জন্য বেশি নির্ভরযোগ্য
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
+        server.starttls() 
         server.login(sender_email, app_password)
         server.send_message(msg)
         server.quit()
     except Exception as e:
-        print("Email error:", e)
-        # ইমেইল না গেলেও যেন ফ্রন্টএন্ডে এরর মেসেজ দেখায়, আটকে না থাকে
-        raise HTTPException(status_code=500, detail="কোড তৈরি হয়েছে কিন্তু ইমেইল পাঠানো যায়নি। দয়া করে আপনার EMAIL_PASS ভ্যারিয়েবলটি চেক করুন।")
+        print("SMTP Error logs:", str(e))
+        # আটকে না রেখে সরাসরি এররটি স্ক্রিনে পাঠানো
+        raise HTTPException(
+            status_code=500, 
+            detail=f"ইমেইল সার্ভার রেসপন্স করছে না। অনুগ্রহ করে Render-এর Environment Variables-এ EMAIL_PASS (১৬ অক্ষরের কোড স্পেস ছাড়া) ঠিক আছে কিনা পুনরায় যাচাই করুন।"
+        )
 
 @app.post("/signup")
 def signup(user: UserSignup):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     
-    # ছোট হাতের অক্ষরে রূপান্তর করে চেক করা হচ্ছে যাতে ডুপ্লিকেট না হয়
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?", 
                    (user.username.lower(), user.email.lower()))
     if cursor.fetchone():
@@ -101,7 +104,7 @@ def signup(user: UserSignup):
     conn.commit()
     conn.close()
 
-    # ইমেইল পাঠানো হচ্ছে
+    # মেইল পাঠানোর চেষ্টা
     send_otp_email(user.email, otp)
     return {"message": "সাইনআপ সফল! ইমেইলে ওটিপি পাঠানো হয়েছে।"}
 
