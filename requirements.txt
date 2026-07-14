@@ -4,3 +4,7 @@ python-multipart
 bcrypt
 python-jose
 pydantic
+fastapi
+uvicorn[standard]
+bcrypt
+email-validator
