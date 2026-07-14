@@ -50,11 +50,10 @@
     </div>
 
     <script>
-        // তোমার Render লিংকটি এখানে দেওয়া আছে
-        const API_URL = "https://myapp-r9rk.onrender.com"; 
+        // একই সার্ভারে থাকায় কোনো লিংকের দরকার নেই, খালি রাখলেই হবে
+        const API_URL = ""; 
         let currentUsername = "";
 
-        // সাইনআপ এর কাজ
         async function handleSignup() {
             const username = document.getElementById('sign-user').value;
             const email = document.getElementById('sign-email').value;
@@ -72,7 +71,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    currentUsername = username; // ইউজারনেমটি মনে রাখল পরের ধাপের জন্য
+                    currentUsername = username;
                     document.getElementById('signup-box').classList.add('hidden');
                     document.getElementById('verify-box').classList.remove('hidden');
                 } else {
@@ -83,7 +82,6 @@
             }
         }
 
-        // ওটিপি ভেরিফাই এর কাজ
         async function handleVerify() {
             const otp = document.getElementById('verify-otp').value;
             const msgDiv = document.getElementById('verify-msg');
@@ -107,7 +105,6 @@
             }
         }
 
-        // লগইন এর কাজ
         async function handleLogin() {
             const username = document.getElementById('login-user').value;
             const password = document.getElementById('login-pass').value;
