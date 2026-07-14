@@ -2,11 +2,11 @@ import sqlite3
 import random
 import smtplib
 import os
+import bcrypt
 from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from passlib.context import CryptContext
 
 app = FastAPI()
 
@@ -29,13 +29,17 @@ def init_db():
 
 init_db()
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# নতুন ও নিরাপদ পাসওয়ার্ড হ্যাকিং সিস্টেম
 def hash_password(password: str):
-    return pwd_context.hash(password)
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str):
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
 class UserSignup(BaseModel):
     username: str
@@ -50,7 +54,7 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
-# 🎯 মূল লিংকে ঢুকলে সরাসরি index.html ফাইলটি দেখাবে
+# মূল লিংকে ঢুকলে সরাসরি index.html ফাইলটি দেখাবে
 @app.get("/")
 def read_index():
     return FileResponse("index.html")
@@ -139,5 +143,5 @@ def login(user: UserLogin):
     if is_verified == 0:
         raise HTTPException(status_code=400, detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।")
         
-    return {"message": "لগইন সফল!", "token": f"token-for-{user.username}"}
-    
+    return {"message": "লগইন সফল!", "token": f"token-for-{user.username}"}
+                                                                               
