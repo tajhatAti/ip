@@ -1,133 +1,411 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bn">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login System</title>
+    <title>OTP Login System</title>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-content: center; padding-top: 50px; }
-        .box { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 300px; text-align: center; margin-bottom: 20px; }
-        input { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; }
-        button { width: 96%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #0056b3; }
-        .message { color: red; margin-top: 10px; font-weight: bold; }
-        .success { color: green; }
-        .hidden { display: none; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #eef2ff, #f8fafc);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 30px 15px;
+            color: #1f2937;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            margin-bottom: 18px;
+        }
+
+        h1, h2 {
+            margin-top: 0;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 26px;
+            margin-bottom: 10px;
+        }
+
+        p.top-note {
+            text-align: center;
+            margin-top: 0;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        label {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            outline: none;
+            font-size: 15px;
+        }
+
+        input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+
+        button {
+            width: 100%;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 14px;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #111827;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .message {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            display: none;
+            text-align: center;
+        }
+
+        .message.error {
+            display: block;
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .message.success {
+            display: block;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .switch-links {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 8px;
+        }
+
+        .switch-links button {
+            width: auto;
+            margin-top: 0;
+            padding: 8px 12px;
+            font-size: 13px;
+            border-radius: 999px;
+        }
+
+        .success-box {
+            text-align: center;
+        }
+
+        .success-box h2 {
+            color: #15803d;
+        }
+
+        .small {
+            font-size: 13px;
+            color: #6b7280;
+            text-align: center;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
+    <div class="container">
+        <div class="card">
+            <h1>🔐 OTP Login System</h1>
+            <p class="top-note">Sign up → Email OTP → Verify → Login</p>
 
-    <div id="app">
-        <div id="signup-box" class="box">
-            <h2>নতুন অ্যাকাউন্ট তৈরি (Sign Up)</h2>
-            <input type="text" id="sign-user" placeholder="ইউজারনেম (যেমন: Ahad67)">
-            <input type="email" id="sign-email" placeholder="ইমেইল এড্রেস">
-            <input type="password" id="sign-pass" placeholder="পাসওয়ার্ড">
-            <button onclick="handleSignup()">সাইনআপ করুন</button>
+            <div class="switch-links">
+                <button class="btn-secondary" onclick="showBox('signup-box')">Sign Up</button>
+                <button class="btn-secondary" onclick="showBox('verify-box')">Verify OTP</button>
+                <button class="btn-secondary" onclick="showBox('login-box')">Login</button>
+            </div>
+        </div>
+
+        <!-- SIGNUP -->
+        <div id="signup-box" class="card">
+            <h2>নতুন অ্যাকাউন্ট তৈরি</h2>
+
+            <label for="sign-user">ইউজারনেম</label>
+            <input type="text" id="sign-user" placeholder="যেমন: Ahad67" autocomplete="username">
+
+            <label for="sign-email">ইমেইল</label>
+            <input type="email" id="sign-email" placeholder="আপনার ইমেইল" autocomplete="email">
+
+            <label for="sign-pass">পাসওয়ার্ড</label>
+            <input type="password" id="sign-pass" placeholder="কমপক্ষে ৬ অক্ষর" autocomplete="new-password">
+
+            <button class="btn-primary" onclick="handleSignup(this)">সাইনআপ করুন</button>
             <div id="signup-msg" class="message"></div>
         </div>
 
-        <div id="verify-box" class="box hidden">
-            <h2>কোড যাচাই করুন (OTP)</h2>
-            <p>আপনার মেইলে পাঠানো ৬ ডিজিটের কোডটি দিন</p>
-            <input type="text" id="verify-otp" placeholder="৬-সংখ্যার কোড">
-            <button onclick="handleVerify()">ভেরিফাই করুন</button>
+        <!-- VERIFY -->
+        <div id="verify-box" class="card hidden">
+            <h2>OTP ভেরিফাই করুন</h2>
+
+            <label for="verify-user">ইউজারনেম</label>
+            <input type="text" id="verify-user" placeholder="আপনার ইউজারনেম">
+
+            <label for="verify-otp">৬ সংখ্যার OTP</label>
+            <input type="text" id="verify-otp" placeholder="যেমন: 123456" maxlength="6" inputmode="numeric">
+
+            <button class="btn-primary" onclick="handleVerify(this)">ভেরিফাই করুন</button>
+            <button class="btn-secondary" onclick="handleResendOTP(this)">আবার OTP পাঠান</button>
+
             <div id="verify-msg" class="message"></div>
+            <div class="small">ইমেইল না পেলে Spam folder-ও চেক করুন।</div>
         </div>
 
-        <div id="login-box" class="box hidden">
-            <h2>লগইন করুন (Sign In)</h2>
-            <input type="text" id="login-user" placeholder="ইউজারনেম">
-            <input type="password" id="login-pass" placeholder="পাসওয়ার্ড">
-            <button onclick="handleLogin()">লগইন</button>
+        <!-- LOGIN -->
+        <div id="login-box" class="card hidden">
+            <h2>লগইন করুন</h2>
+
+            <label for="login-user">ইউজারনেম</label>
+            <input type="text" id="login-user" placeholder="আপনার ইউজারনেম" autocomplete="username">
+
+            <label for="login-pass">পাসওয়ার্ড</label>
+            <input type="password" id="login-pass" placeholder="আপনার পাসওয়ার্ড" autocomplete="current-password">
+
+            <button class="btn-primary" onclick="handleLogin(this)">লগইন</button>
             <div id="login-msg" class="message"></div>
         </div>
 
-        <div id="dashboard-box" class="box hidden">
-            <h2 class="success">🎉 লগইন সফল হয়েছে!</h2>
-            <p>আপনি এখন সিস্টেমের ভেতরে আছেন।</p>
+        <!-- DASHBOARD -->
+        <div id="dashboard-box" class="card hidden">
+            <div class="success-box">
+                <h2>🎉 লগইন সফল হয়েছে!</h2>
+                <p id="welcome-text">আপনি এখন সিস্টেমে লগইন করেছেন।</p>
+                <button class="btn-secondary" onclick="logout()">Logout</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // একই সার্ভারে থাকায় কোনো লিংকের দরকার নেই, খালি রাখলেই হবে
-        const API_URL = ""; 
         let currentUsername = "";
 
-        async function handleSignup() {
-            const username = document.getElementById('sign-user').value;
-            const email = document.getElementById('sign-email').value;
-            const password = document.getElementById('sign-pass').value;
-            const msgDiv = document.getElementById('signup-msg');
+        function showBox(id) {
+            const boxes = ["signup-box", "verify-box", "login-box", "dashboard-box"];
+            boxes.forEach(boxId => {
+                document.getElementById(boxId).classList.add("hidden");
+            });
+            document.getElementById(id).classList.remove("hidden");
+            clearAllMessages();
+        }
 
-            msgDiv.innerText = "অপেক্ষা করুন...";
+        function clearAllMessages() {
+            ["signup-msg", "verify-msg", "login-msg"].forEach(id => {
+                const el = document.getElementById(id);
+                el.className = "message";
+                el.textContent = "";
+            });
+        }
 
-            try {
-                const response = await fetch(`${API_URL}/signup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, email, password })
-                });
-                const data = await response.json();
+        function setMessage(id, text, type = "error") {
+            const el = document.getElementById(id);
+            el.textContent = text;
+            el.className = `message ${type}`;
+        }
 
-                if (response.ok) {
-                    currentUsername = username;
-                    document.getElementById('signup-box').classList.add('hidden');
-                    document.getElementById('verify-box').classList.remove('hidden');
-                } else {
-                    msgDiv.innerText = data.detail || "কিছু একটা ভুল হয়েছে।";
-                }
-            } catch (err) {
-                msgDiv.innerText = "সার্ভারে কানেক্ট করা যাচ্ছে না।";
+        function setLoading(button, loading, loadingText = "Please wait...") {
+            if (!button) return;
+            if (loading) {
+                button.dataset.originalText = button.textContent;
+                button.textContent = loadingText;
+                button.disabled = true;
+                button.style.opacity = "0.7";
+                button.style.cursor = "not-allowed";
+            } else {
+                button.textContent = button.dataset.originalText || button.textContent;
+                button.disabled = false;
+                button.style.opacity = "1";
+                button.style.cursor = "pointer";
             }
         }
 
-        async function handleVerify() {
-            const otp = document.getElementById('verify-otp').value;
-            const msgDiv = document.getElementById('verify-msg');
-
+        async function parseJsonSafe(response) {
             try {
-                const response = await fetch(`${API_URL}/verify`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: currentUsername, otp: otp })
-                });
-                const data = await response.json();
-
-                if (response.ok) {
-                    document.getElementById('verify-box').classList.add('hidden');
-                    document.getElementById('login-box').classList.remove('hidden');
-                } else {
-                    msgDiv.innerText = data.detail || "ভুল কোড।";
-                }
-            } catch (err) {
-                msgDiv.innerText = "ত্রুটি ঘটেছে।";
+                return await response.json();
+            } catch {
+                return {};
             }
         }
 
-        async function handleLogin() {
-            const username = document.getElementById('login-user').value;
-            const password = document.getElementById('login-pass').value;
-            const msgDiv = document.getElementById('login-msg');
+        async function apiPost(url, payload) {
+            const response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await parseJsonSafe(response);
+
+            if (!response.ok) {
+                throw new Error(data.detail || "কিছু একটা ভুল হয়েছে।");
+            }
+
+            return data;
+        }
+
+        async function handleSignup(button) {
+            clearAllMessages();
+
+            const username = document.getElementById("sign-user").value.trim();
+            const email = document.getElementById("sign-email").value.trim();
+            const password = document.getElementById("sign-pass").value.trim();
+
+            if (!username || !email || !password) {
+                setMessage("signup-msg", "সব ঘর পূরণ করুন।");
+                return;
+            }
+
+            setLoading(button, true, "সাইনআপ হচ্ছে...");
 
             try {
-                const response = await fetch(`${API_URL}/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await response.json();
+                const data = await apiPost("/signup", { username, email, password });
 
-                if (response.ok) {
-                    document.getElementById('login-box').classList.add('hidden');
-                    document.getElementById('dashboard-box').classList.remove('hidden');
-                } else {
-                    msgDiv.innerText = data.detail || "ভুল ইউজারনেম বা পাসওয়ার্ড।";
-                }
+                currentUsername = username;
+                document.getElementById("verify-user").value = username;
+                document.getElementById("login-user").value = username;
+
+                showBox("verify-box");
+                setMessage("verify-msg", data.message || "OTP পাঠানো হয়েছে।", "success");
             } catch (err) {
-                msgDiv.innerText = "ত্রুটি ঘটেছে।";
+                setMessage("signup-msg", err.message || "সার্ভারে কানেক্ট করা যাচ্ছে না।");
+            } finally {
+                setLoading(button, false);
             }
+        }
+
+        async function handleVerify(button) {
+            clearAllMessages();
+
+            const username = document.getElementById("verify-user").value.trim();
+            const otp = document.getElementById("verify-otp").value.trim();
+
+            if (!username || !otp) {
+                setMessage("verify-msg", "ইউজারনেম এবং OTP দিন।");
+                return;
+            }
+
+            setLoading(button, true, "ভেরিফাই হচ্ছে...");
+
+            try {
+                const data = await apiPost("/verify", { username, otp });
+
+                currentUsername = username;
+                document.getElementById("login-user").value = username;
+
+                showBox("login-box");
+                setMessage("login-msg", data.message || "ভেরিফিকেশন সফল!", "success");
+            } catch (err) {
+                setMessage("verify-msg", err.message || "ভেরিফিকেশন ব্যর্থ হয়েছে।");
+            } finally {
+                setLoading(button, false);
+            }
+        }
+
+        async function handleResendOTP(button) {
+            clearAllMessages();
+
+            const username = document.getElementById("verify-user").value.trim();
+
+            if (!username) {
+                setMessage("verify-msg", "আগে ইউজারনেম লিখুন।");
+                return;
+            }
+
+            setLoading(button, true, "OTP পাঠানো হচ্ছে...");
+
+            try {
+                const data = await apiPost("/resend-otp", { username });
+                setMessage("verify-msg", data.message || "নতুন OTP পাঠানো হয়েছে।", "success");
+            } catch (err) {
+                setMessage("verify-msg", err.message || "OTP পাঠানো যায়নি।");
+            } finally {
+                setLoading(button, false);
+            }
+        }
+
+        async function handleLogin(button) {
+            clearAllMessages();
+
+            const username = document.getElementById("login-user").value.trim();
+            const password = document.getElementById("login-pass").value.trim();
+
+            if (!username || !password) {
+                setMessage("login-msg", "ইউজারনেম এবং পাসওয়ার্ড দিন।");
+                return;
+            }
+
+            setLoading(button, true, "লগইন হচ্ছে...");
+
+            try {
+                const data = await apiPost("/login", { username, password });
+
+                showBox("dashboard-box");
+                document.getElementById("welcome-text").textContent =
+                    `${data.username || username}, আপনি সফলভাবে লগইন করেছেন।`;
+            } catch (err) {
+                setMessage("login-msg", err.message || "লগইন ব্যর্থ হয়েছে।");
+            } finally {
+                setLoading(button, false);
+            }
+        }
+
+        function logout() {
+            currentUsername = "";
+            document.getElementById("login-pass").value = "";
+            showBox("login-box");
         }
     </script>
 </body>
-</html>
+                    </html>
