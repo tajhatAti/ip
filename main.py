@@ -6,10 +6,19 @@ from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from passlib.context import CryptContext
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# ডাটাবেস তৈরি
+# এই অংশটি তোমার HTML ফাইলকে সার্ভারের সাথে যুক্ত হতে সাহায্য করবে
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 def init_db():
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -28,21 +37,29 @@ def init_db():
 
 init_db()
 
-# পাসওয়ার্ড হ্যাশিং টুল
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str):
     return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str):
+    return pwd_context.verify(plain_password, hashed_password)
 
 class UserSignup(BaseModel):
     username: str
     email: str
     password: str
 
-# ইমেইল পাঠানো
+class UserVerify(BaseModel):
+    username: str
+    otp: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
 def send_otp_email(receiver_email: str, otp: str):
     sender_email = "editsupra93@gmail.com"
-    # Render-এর গোপন সেটিংস থেকে পাসওয়ার্ড নেবে
     app_password = os.getenv("EMAIL_PASS")
 
     if not app_password:
@@ -62,12 +79,10 @@ def send_otp_email(receiver_email: str, otp: str):
         print("Email error:", e)
         raise HTTPException(status_code=500, detail="ইমেইল পাঠানো যায়নি।")
 
-# সাইনআপ রাউট
 @app.post("/signup")
 def signup(user: UserSignup):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-
     cursor.execute("SELECT * FROM users WHERE username = ? OR email = ?", (user.username, user.email))
     if cursor.fetchone():
         conn.close()
@@ -75,12 +90,55 @@ def signup(user: UserSignup):
 
     otp = str(random.randint(100000, 999999))
     hashed_pw = hash_password(user.password)
-
     cursor.execute("INSERT INTO users (username, email, password, otp) VALUES (?, ?, ?, ?)",
                    (user.username, user.email, hashed_pw, otp))
     conn.commit()
     conn.close()
 
     send_otp_email(user.email, otp)
+    return {"message": "সাইনআপ সফল! ইমেইলে ওটিপি পাঠানো হয়েছে।"}
 
-    return {"message": "সাইনআপ সফল! ইমেইলে একটি ৬-সংখ্যার OTP পাঠানো হয়েছে।"}
+@app.post("/verify")
+def verify_otp(user: UserVerify):
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT otp, is_verified FROM users WHERE username = ?", (user.username,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="ইউজারনেম পাওয়া যায়নি।")
+        
+    db_otp, is_verified = row
+    if is_verified == 1:
+        conn.close()
+        return {"message": "অ্যাকাউন্ট ইতিমধ্যেই ভেরিফাইড!"}
+        
+    if db_otp == user.otp:
+        cursor.execute("UPDATE users SET is_verified = 1 WHERE username = ?", (user.username,))
+        conn.commit()
+        conn.close()
+        return {"message": "ভেরিফিকেশন সফল!"}
+    else:
+        conn.close()
+        raise HTTPException(status_code=400, detail="ভুল OTP কোড!")
+
+@app.post("/login")
+def login(user: UserLogin):
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT password, is_verified FROM users WHERE username = ?", (user.username,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=400, detail="ভুল ইউজারনেম বা পাসওয়ার্ড।")
+        
+    hashed_pw, is_verified = row
+    if not verify_password(user.password, hashed_pw):
+        raise HTTPException(status_code=400, detail="ভুল ইউজারনেম বা পাসওয়ার্ড।")
+        
+    if is_verified == 0:
+        raise HTTPException(status_code=400, detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।")
+        
+    return {"message": "লগইন সফল!", "token": f"token-for-{user.username}"}
