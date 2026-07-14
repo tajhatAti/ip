@@ -3,6 +3,7 @@ import random
 import smtplib
 import os
 import bcrypt
+import sys
 from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -57,42 +58,77 @@ class UserLogin(BaseModel):
 def read_index():
     return FileResponse("index.html")
 
-# গুগল সিকিউরিটি বাইপাস ও দ্রুত কানেকশন ফাংশন
+# 🔍 ফুল ডিব্যাগ ইমেইল ফাংশন
 def send_otp_email(receiver_email: str, otp: str):
     sender_email = "editsupra93@gmail.com"
     app_password = os.getenv("EMAIL_PASS")
 
+    print("\n=== DEBUG START: EMAIL CONFIGURATION ===", flush=True)
+    print(f"Sender Email: {sender_email}", flush=True)
     if not app_password:
-        raise HTTPException(status_code=500, detail="সার্ভার সমস্যা: ইমেইল পাসওয়ার্ড সেট করা নেই।")
+        print("❌ CRITICAL ERROR: EMAIL_PASS environment variable is completely missing or empty!", flush=True)
+        raise HTTPException(status_code=500, detail="সার্ভার সমস্যা: EMAIL_PASS সেট করা নেই।")
+    else:
+        print(f"EMAIL_PASS found (Length: {len(app_password)} characters)", flush=True)
 
     msg = MIMEText(f"আপনার ভেরিফিকেশন কোড (OTP) হলো: {otp}", 'plain', 'utf-8')
     msg['Subject'] = 'Account Verification OTP'
     msg['From'] = sender_email
     msg['To'] = receiver_email
 
+    # ১. প্রথমে Port 587 (TLS) দিয়ে চেষ্টা করবে
     try:
-        # TLS (Port 587) ব্যবহার করা হচ্ছে যা ক্লাউড সার্ভারের জন্য বেশি নির্ভরযোগ্য
+        print("🔄 Attempting SMTP connection via Port 587 (TLS)...", flush=True)
         server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
-        server.starttls() 
+        server.set_debuglevel(1) # এই লাইনটি Render লগে গুগলের সাথে কথপোকথন প্রিন্ট করবে
+        print("➡️ Connected. Sending STARTTLS...", flush=True)
+        server.starttls()
+        print("➡️ Logging in to Gmail SMTP...", flush=True)
         server.login(sender_email, app_password)
+        print("➡️ Login successful! Sending message...", flush=True)
         server.send_message(msg)
         server.quit()
-    except Exception as e:
-        print("SMTP Error logs:", str(e))
-        # আটকে না রেখে সরাসরি এররটি স্ক্রিনে পাঠানো
+        print("✅ EMAIL SENT SUCCESSFULLY VIA PORT 587!", flush=True)
+        print("=== DEBUG END: SUCCESS ===\n", flush=True)
+        return
+    except Exception as e587:
+        print(f"⚠️ Port 587 Failed. Specific Error: {str(e587)}", flush=True)
+        print(f"Exception Type: {type(e587).__name__}", flush=True)
+
+    # ২. যদি ৫৭৮ ফেইল করে, তবে ব্যাকআপ হিসেবে Port 465 (SSL) দিয়ে চেষ্টা করবে
+    try:
+        print("🔄 Attempting Backup SMTP connection via Port 465 (SSL)...", flush=True)
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
+        server.set_debuglevel(1)
+        print("➡️ Connected. Logging in...", flush=True)
+        server.login(sender_email, app_password)
+        print("➡️ Login successful! Sending message...", flush=True)
+        server.send_message(msg)
+        server.quit()
+        print("✅ EMAIL SENT SUCCESSFULLY VIA PORT 465!", flush=True)
+        print("=== DEBUG END: SUCCESS ===\n", flush=True)
+        return
+    except Exception as e465:
+        print(f"❌ CRITICAL: Both SMTP Ports Failed!", flush=True)
+        print(f"⚠️ Port 465 Specific Error: {str(e465)}", flush=True)
+        print("=== DEBUG END: CRITICAL FAILURE ===\n", flush=True)
+        
+        # স্ক্রিনে ডিটেইলড এরর দেখাবে যাতে বুঝতে পারো আসল ঝামেলা কী
         raise HTTPException(
             status_code=500, 
-            detail=f"ইমেইল সার্ভার রেসপন্স করছে না। অনুগ্রহ করে Render-এর Environment Variables-এ EMAIL_PASS (১৬ অক্ষরের কোড স্পেস ছাড়া) ঠিক আছে কিনা পুনরায় যাচাই করুন।"
+            detail=f"মেইল পাঠানো যায়নি। পোর্ট ৫৮৭ এরর: {str(e587)} | পোর্ট ৪৬৫ এরর: {str(e465)}"
         )
 
 @app.post("/signup")
 def signup(user: UserSignup):
+    print(f"\n📢 Signup Triggered for User: {user.username}, Email: {user.email}", flush=True)
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?", 
                    (user.username.lower(), user.email.lower()))
     if cursor.fetchone():
+        print("⚠️ Signup aborted: Username or Email already exists in DB.", flush=True)
         conn.close()
         raise HTTPException(status_code=400, detail="এই ইউজারনেম বা ইমেইল আগে থেকেই আছে।")
 
@@ -103,8 +139,8 @@ def signup(user: UserSignup):
                    (user.username, user.email, hashed_pw, otp))
     conn.commit()
     conn.close()
+    print("💾 User saved to database. Now calling send_otp_email()...", flush=True)
 
-    # মেইল পাঠানোর চেষ্টা
     send_otp_email(user.email, otp)
     return {"message": "সাইনআপ সফল! ইমেইলে ওটিপি পাঠানো হয়েছে।"}
 
