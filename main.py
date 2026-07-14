@@ -4,21 +4,13 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from passlib.context import CryptContext
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# এই অংশটি তোমার HTML ফাইলকে সার্ভারের সাথে যুক্ত হতে সাহায্য করবে
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# ডাটাবেস সেটআপ
 def init_db():
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -58,6 +50,12 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+# 🎯 মূল লিংকে ঢুকলে সরাসরি index.html ফাইলটি দেখাবে
+@app.get("/")
+def read_index():
+    return FileResponse("index.html")
+
+# ইমেইল পাঠানোর ফাংশন
 def send_otp_email(receiver_email: str, otp: str):
     sender_email = "editsupra93@gmail.com"
     app_password = os.getenv("EMAIL_PASS")
@@ -141,4 +139,4 @@ def login(user: UserLogin):
     if is_verified == 0:
         raise HTTPException(status_code=400, detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।")
         
-    return {"message": "লগইন সফল!", "token": f"token-for-{user.username}"}
+    return {"message": "لগইন সফল!", "token": f"token-for-{user.username}"}
