@@ -60,7 +60,7 @@ def read_index():
 
 # 🔍 ফুল ডিব্যাগ ইমেইল ফাংশন
 def send_otp_email(receiver_email: str, otp: str):
-    sender_email = "editsupra93@gmail.com"
+    sender_email = "trulove551@gmail.com"
     app_password = os.getenv("EMAIL_PASS")
 
     print("\n=== DEBUG START: EMAIL CONFIGURATION ===", flush=True)
