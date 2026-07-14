@@ -29,7 +29,6 @@ def init_db():
 
 init_db()
 
-# নতুন ও নিরাপদ পাসওয়ার্ড হ্যাকিং সিস্টেম
 def hash_password(password: str):
     pwd_bytes = password.encode('utf-8')
     salt = bcrypt.gensalt()
@@ -54,12 +53,11 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
-# মূল লিংকে ঢুকলে সরাসরি index.html ফাইলটি দেখাবে
 @app.get("/")
 def read_index():
     return FileResponse("index.html")
 
-# ইমেইল পাঠানোর ফাংশন
+# উন্নত ও দ্রুত ইমেইল পাঠানোর ফাংশন (টাইমআউটসহ)
 def send_otp_email(receiver_email: str, otp: str):
     sender_email = "editsupra93@gmail.com"
     app_password = os.getenv("EMAIL_PASS")
@@ -67,36 +65,43 @@ def send_otp_email(receiver_email: str, otp: str):
     if not app_password:
         raise HTTPException(status_code=500, detail="সার্ভার সমস্যা: ইমেইল পাসওয়ার্ড সেট করা নেই।")
 
-    msg = MIMEText(f"আপনার ভেরিফিকেশন কোড (OTP) হলো: {otp}")
+    msg = MIMEText(f"আপনার ভেরিফিকেশন কোড (OTP) হলো: {otp}", 'plain', 'utf-8')
     msg['Subject'] = 'Account Verification OTP'
     msg['From'] = sender_email
     msg['To'] = receiver_email
 
     try:
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        # এখানে ৫ সেকেন্ডের একটা সময়সীমা দেওয়া হয়েছে যাতে আটকে না থাকে
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=5)
         server.login(sender_email, app_password)
         server.send_message(msg)
         server.quit()
     except Exception as e:
         print("Email error:", e)
-        raise HTTPException(status_code=500, detail="ইমেইল পাঠানো যায়নি।")
+        # ইমেইল না গেলেও যেন ফ্রন্টএন্ডে এরর মেসেজ দেখায়, আটকে না থাকে
+        raise HTTPException(status_code=500, detail="কোড তৈরি হয়েছে কিন্তু ইমেইল পাঠানো যায়নি। দয়া করে আপনার EMAIL_PASS ভ্যারিয়েবলটি চেক করুন।")
 
 @app.post("/signup")
 def signup(user: UserSignup):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ? OR email = ?", (user.username, user.email))
+    
+    # ছোট হাতের অক্ষরে রূপান্তর করে চেক করা হচ্ছে যাতে ডুপ্লিকেট না হয়
+    cursor.execute("SELECT * FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?", 
+                   (user.username.lower(), user.email.lower()))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="এই ইউজারনেম বা ইমেইল আগে থেকেই আছে।")
 
     otp = str(random.randint(100000, 999999))
     hashed_pw = hash_password(user.password)
+    
     cursor.execute("INSERT INTO users (username, email, password, otp) VALUES (?, ?, ?, ?)",
                    (user.username, user.email, hashed_pw, otp))
     conn.commit()
     conn.close()
 
+    # ইমেইল পাঠানো হচ্ছে
     send_otp_email(user.email, otp)
     return {"message": "সাইনআপ সফল! ইমেইলে ওটিপি পাঠানো হয়েছে।"}
 
@@ -104,7 +109,7 @@ def signup(user: UserSignup):
 def verify_otp(user: UserVerify):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT otp, is_verified FROM users WHERE username = ?", (user.username,))
+    cursor.execute("SELECT otp, is_verified FROM users WHERE LOWER(username) = ?", (user.username.lower(),))
     row = cursor.fetchone()
     
     if not row:
@@ -117,7 +122,7 @@ def verify_otp(user: UserVerify):
         return {"message": "অ্যাকাউন্ট ইতিমধ্যেই ভেরিফাইড!"}
         
     if db_otp == user.otp:
-        cursor.execute("UPDATE users SET is_verified = 1 WHERE username = ?", (user.username,))
+        cursor.execute("UPDATE users SET is_verified = 1 WHERE LOWER(username) = ?", (user.username.lower(),))
         conn.commit()
         conn.close()
         return {"message": "ভেরিফিকেশন সফল!"}
@@ -129,7 +134,7 @@ def verify_otp(user: UserVerify):
 def login(user: UserLogin):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT password, is_verified FROM users WHERE username = ?", (user.username,))
+    cursor.execute("SELECT password, is_verified FROM users WHERE LOWER(username) = ?", (user.username.lower(),))
     row = cursor.fetchone()
     conn.close()
     
@@ -144,4 +149,4 @@ def login(user: UserLogin):
         raise HTTPException(status_code=400, detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।")
         
     return {"message": "লগইন সফল!", "token": f"token-for-{user.username}"}
-                                                                               
+    
