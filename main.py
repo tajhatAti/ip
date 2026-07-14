@@ -140,3 +140,4 @@ def login(user: UserLogin):
         raise HTTPException(status_code=400, detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।")
         
     return {"message": "لগইন সফল!", "token": f"token-for-{user.username}"}
+    
