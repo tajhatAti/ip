@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login System</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-content: center; padding-top: 50px; }
+        .box { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 300px; text-align: center; margin-bottom: 20px; }
+        input { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 96%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        .message { color: red; margin-top: 10px; font-weight: bold; }
+        .success { color: green; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+        <div id="signup-box" class="box">
+            <h2>নতুন অ্যাকাউন্ট তৈরি (Sign Up)</h2>
+            <input type="text" id="sign-user" placeholder="ইউজারনেম (যেমন: Ahad67)">
+            <input type="email" id="sign-email" placeholder="ইমেইল এড্রেস">
+            <input type="password" id="sign-pass" placeholder="পাসওয়ার্ড">
+            <button onclick="handleSignup()">সাইনআপ করুন</button>
+            <div id="signup-msg" class="message"></div>
+        </div>
+
+        <div id="verify-box" class="box hidden">
+            <h2>কোড যাচাই করুন (OTP)</h2>
+            <p>আপনার মেইলে পাঠানো ৬ ডিজিটের কোডটি দিন</p>
+            <input type="text" id="verify-otp" placeholder="৬-সংখ্যার কোড">
+            <button onclick="handleVerify()">ভেরিফাই করুন</button>
+            <div id="verify-msg" class="message"></div>
+        </div>
+
+        <div id="login-box" class="box hidden">
+            <h2>লগইন করুন (Sign In)</h2>
+            <input type="text" id="login-user" placeholder="ইউজারনেম">
+            <input type="password" id="login-pass" placeholder="পাসওয়ার্ড">
+            <button onclick="handleLogin()">লগইন</button>
+            <div id="login-msg" class="message"></div>
+        </div>
+
+        <div id="dashboard-box" class="box hidden">
+            <h2 class="success">🎉 লগইন সফল হয়েছে!</h2>
+            <p>আপনি এখন সিস্টেমের ভেতরে আছেন।</p>
+        </div>
+    </div>
+
+    <script>
+        // তোমার Render লিংকটি এখানে দেওয়া আছে
+        const API_URL = "https://myapp-r9rk.onrender.com"; 
+        let currentUsername = "";
+
+        // সাইনআপ এর কাজ
+        async function handleSignup() {
+            const username = document.getElementById('sign-user').value;
+            const email = document.getElementById('sign-email').value;
+            const password = document.getElementById('sign-pass').value;
+            const msgDiv = document.getElementById('signup-msg');
+
+            msgDiv.innerText = "অপেক্ষা করুন...";
+
+            try {
+                const response = await fetch(`${API_URL}/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentUsername = username; // ইউজারনেমটি মনে রাখল পরের ধাপের জন্য
+                    document.getElementById('signup-box').classList.add('hidden');
+                    document.getElementById('verify-box').classList.remove('hidden');
+                } else {
+                    msgDiv.innerText = data.detail || "কিছু একটা ভুল হয়েছে।";
+                }
+            } catch (err) {
+                msgDiv.innerText = "সার্ভারে কানেক্ট করা যাচ্ছে না।";
+            }
+        }
+
+        // ওটিপি ভেরিফাই এর কাজ
+        async function handleVerify() {
+            const otp = document.getElementById('verify-otp').value;
+            const msgDiv = document.getElementById('verify-msg');
+
+            try {
+                const response = await fetch(`${API_URL}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUsername, otp: otp })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('verify-box').classList.add('hidden');
+                    document.getElementById('login-box').classList.remove('hidden');
+                } else {
+                    msgDiv.innerText = data.detail || "ভুল কোড।";
+                }
+            } catch (err) {
+                msgDiv.innerText = "ত্রুটি ঘটেছে।";
+            }
+        }
+
+        // লগইন এর কাজ
+        async function handleLogin() {
+            const username = document.getElementById('login-user').value;
+            const password = document.getElementById('login-pass').value;
+            const msgDiv = document.getElementById('login-msg');
+
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('login-box').classList.add('hidden');
+                    document.getElementById('dashboard-box').classList.remove('hidden');
+                } else {
+                    msgDiv.innerText = data.detail || "ভুল ইউজারনেম বা পাসওয়ার্ড।";
+                }
+            } catch (err) {
+                msgDiv.innerText = "ত্রুটি ঘটেছে।";
+            }
+        }
+    </script>
+</body>
+</html>
