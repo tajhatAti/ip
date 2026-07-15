@@ -1,16 +1,13 @@
 const API = "";
 let signupUsername = "";
-let signupEmail = "";
 let authToken = localStorage.getItem("ahad_token") || null;
 let resendTimerInterval = null;
 
-// ---------- Screen Navigation ----------
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById(id).classList.add("active");
 }
 
-// ---------- Toast ----------
 function toast(message, type = "success") {
   const container = document.getElementById("toastContainer");
   const el = document.createElement("div");
@@ -20,7 +17,6 @@ function toast(message, type = "success") {
   setTimeout(() => el.remove(), 3500);
 }
 
-// ---------- API Helper ----------
 async function api(path, method = "POST", body = null, auth = false) {
   const headers = { "Content-Type": "application/json" };
   if (auth && authToken) headers["Authorization"] = "Bearer " + authToken;
@@ -30,7 +26,7 @@ async function api(path, method = "POST", body = null, auth = false) {
     body: body ? JSON.stringify(body) : null
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || "কিছু একটা সমস্যা হয়েছে");
+  if (!res.ok) throw new Error(data.detail || "Something went wrong. Please try again.");
   return data;
 }
 
@@ -45,7 +41,6 @@ function shakeField(inputEl) {
   setTimeout(() => field.classList.remove("shake"), 300);
 }
 
-// ---------- Password Eye Toggle ----------
 document.querySelectorAll(".eye").forEach(eye => {
   eye.addEventListener("click", () => {
     const input = document.getElementById(eye.dataset.target);
@@ -53,7 +48,6 @@ document.querySelectorAll(".eye").forEach(eye => {
   });
 });
 
-// ---------- Password Strength ----------
 function checkStrength(password, fillEl, labelEl) {
   let score = 0;
   if (password.length >= 6) score++;
@@ -79,26 +73,37 @@ document.getElementById("fp_newpass").addEventListener("input", e => {
   checkStrength(e.target.value, document.getElementById("strengthFill2"), null);
 });
 
-// ---------- OTP Box Auto-Advance ----------
-function setupOtpBoxes(containerId) {
+// ---------- OTP boxes: auto-advance + auto-submit + paste support ----------
+function setupOtpBoxes(containerId, onComplete) {
   const boxes = document.querySelectorAll(`#${containerId} input`);
   boxes.forEach((box, i) => {
     box.addEventListener("input", () => {
       box.value = box.value.replace(/[^0-9]/g, "");
       if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+      const val = getOtpValue(containerId);
+      if (val.length === 6) onComplete();
     });
     box.addEventListener("keydown", e => {
       if (e.key === "Backspace" && !box.value && i > 0) boxes[i - 1].focus();
+    });
+    box.addEventListener("paste", e => {
+      e.preventDefault();
+      const pasted = (e.clipboardData.getData("text") || "").replace(/[^0-9]/g, "").slice(0, 6);
+      pasted.split("").forEach((ch, idx) => { if (boxes[idx]) boxes[idx].value = ch; });
+      if (pasted.length === 6) { boxes[5].focus(); onComplete(); }
     });
   });
 }
 function getOtpValue(containerId) {
   return Array.from(document.querySelectorAll(`#${containerId} input`)).map(i => i.value).join("");
 }
-setupOtpBoxes("otpBoxesSignup");
-setupOtpBoxes("otpBoxesForgot");
+function clearOtpBoxes(containerId) {
+  document.querySelectorAll(`#${containerId} input`).forEach(i => i.value = "");
+}
 
-// ---------- Resend Timer ----------
+setupOtpBoxes("otpBoxesSignup", () => document.getElementById("btnVerify").click());
+setupOtpBoxes("otpBoxesForgot", () => document.getElementById("btnForgot2").click());
+
 function startResendTimer(seconds = 45) {
   const timerEl = document.getElementById("resendTimer");
   const linkEl = document.getElementById("resendLink");
@@ -130,11 +135,11 @@ document.getElementById("formSignup").addEventListener("submit", async e => {
   try {
     await api("/signup", "POST", { username, email, password });
     signupUsername = username;
-    signupEmail = email;
+    clearOtpBoxes("otpBoxesSignup");
     document.getElementById("otpEmailNote").textContent = `Code sent to ${email}`;
     showScreen("screen-otp");
     startResendTimer(45);
-    toast("OTP পাঠানো হয়েছে!", "success");
+    toast("Verification code sent!", "success");
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -142,16 +147,15 @@ document.getElementById("formSignup").addEventListener("submit", async e => {
   }
 });
 
-// ---------- VERIFY OTP (signup) ----------
 document.getElementById("btnVerify").addEventListener("click", async () => {
   const btn = document.getElementById("btnVerify");
   const otp = getOtpValue("otpBoxesSignup");
-  if (otp.length !== 6) { toast("৬ সংখ্যার কোড দিন", "error"); return; }
+  if (otp.length !== 6) { toast("Enter the 6-digit code", "error"); return; }
 
   setLoading(btn, true);
   try {
     await api("/verify", "POST", { username: signupUsername, otp });
-    toast("ভেরিফিকেশন সফল!", "success");
+    toast("Email verified!", "success");
     setTimeout(() => showScreen("screen-signin"), 800);
   } catch (err) {
     toast(err.message, "error");
@@ -163,7 +167,7 @@ document.getElementById("btnVerify").addEventListener("click", async () => {
 document.getElementById("resendLink").addEventListener("click", async () => {
   try {
     await api("/resend-otp", "POST", { username: signupUsername });
-    toast("নতুন কোড পাঠানো হয়েছে", "success");
+    toast("New code sent", "success");
     startResendTimer(45);
   } catch (err) {
     toast(err.message, "error");
@@ -182,7 +186,7 @@ document.getElementById("formSignin").addEventListener("submit", async e => {
     const data = await api("/login", "POST", { username, password });
     authToken = data.token;
     localStorage.setItem("ahad_token", authToken);
-    toast("লগইন সফল!", "success");
+    toast("Welcome back!", "success");
     await loadDashboard();
     showScreen("screen-dashboard");
   } catch (err) {
@@ -192,7 +196,7 @@ document.getElementById("formSignin").addEventListener("submit", async e => {
   }
 });
 
-// ---------- FORGOT PASSWORD FLOW ----------
+// ---------- FORGOT PASSWORD ----------
 let forgotEmail = "";
 let forgotOtp = "";
 
@@ -203,7 +207,8 @@ document.getElementById("formForgot1").addEventListener("submit", async e => {
   setLoading(btn, true);
   try {
     await api("/forgot-password", "POST", { email: forgotEmail });
-    toast("কোড পাঠানো হয়েছে", "success");
+    toast("If this email exists, a code has been sent", "success");
+    clearOtpBoxes("otpBoxesForgot");
     showScreen("screen-forgot2");
   } catch (err) {
     toast(err.message, "error");
@@ -215,11 +220,11 @@ document.getElementById("formForgot1").addEventListener("submit", async e => {
 document.getElementById("btnForgot2").addEventListener("click", async () => {
   const btn = document.getElementById("btnForgot2");
   forgotOtp = getOtpValue("otpBoxesForgot");
-  if (forgotOtp.length !== 6) { toast("৬ সংখ্যার কোড দিন", "error"); return; }
+  if (forgotOtp.length !== 6) { toast("Enter the 6-digit code", "error"); return; }
   setLoading(btn, true);
   try {
     await api("/verify-reset-otp", "POST", { email: forgotEmail, otp: forgotOtp });
-    toast("কোড সঠিক!", "success");
+    toast("Code verified!", "success");
     showScreen("screen-forgot3");
   } catch (err) {
     toast(err.message, "error");
@@ -235,7 +240,7 @@ document.getElementById("formForgot3").addEventListener("submit", async e => {
   const p2 = document.getElementById("fp_confirmpass").value;
   if (p1 !== p2) {
     shakeField(document.getElementById("fp_confirmpass"));
-    toast("পাসওয়ার্ড মিলছে না", "error");
+    toast("Passwords do not match", "error");
     return;
   }
   setLoading(btn, true);
@@ -272,11 +277,12 @@ async function loadDashboard() {
     renderLinks(data.links || []);
   } catch (err) {
     toast(err.message, "error");
+    authToken = null;
+    localStorage.removeItem("ahad_token");
     showScreen("screen-signin");
   }
 }
 
-// Tabs
 document.querySelectorAll(".tab").forEach((tab, idx) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
@@ -287,7 +293,6 @@ document.querySelectorAll(".tab").forEach((tab, idx) => {
   });
 });
 
-// Detect changes -> show save button
 ["dashPhone", "dashCode"].forEach(id => {
   document.getElementById(id).addEventListener("input", () => {
     document.getElementById("btnSaveProfile").classList.add("show");
@@ -305,14 +310,13 @@ document.getElementById("btnSaveProfile").addEventListener("click", async () => 
 
   try {
     await api("/profile/update", "POST", { phone, custom_code, links }, true);
-    toast("প্রোফাইল সেভ হয়েছে!", "success");
+    toast("Profile saved!", "success");
     btn.classList.remove("show");
   } catch (err) {
     toast(err.message, "error");
   }
 });
 
-// Links
 function renderLinks(links) {
   const list = document.getElementById("linksList");
   list.innerHTML = "";
@@ -337,7 +341,6 @@ function addLinkRow(label = "", url = "") {
 }
 document.getElementById("btnAddLink").addEventListener("click", () => addLinkRow());
 
-// Logout
 document.getElementById("btnLogout").addEventListener("click", () => {
   document.getElementById("logoutModal").classList.remove("hidden");
 });
@@ -345,17 +348,15 @@ document.getElementById("cancelLogout").addEventListener("click", () => {
   document.getElementById("logoutModal").classList.add("hidden");
 });
 document.getElementById("confirmLogout").addEventListener("click", async () => {
-  try {
-    await api("/logout", "POST", null, true);
-  } catch (e) {}
+  try { await api("/logout", "POST", null, true); } catch (e) {}
   authToken = null;
   localStorage.removeItem("ahad_token");
   document.getElementById("logoutModal").classList.add("hidden");
   showScreen("screen-signin");
-  toast("লগআউট হয়েছে", "success");
+  toast("Logged out", "success");
 });
 
-// ---------- Auto login if token exists ----------
+// Auto login if a session token already exists
 if (authToken) {
   loadDashboard().then(() => showScreen("screen-dashboard")).catch(() => {});
-}
+        }
