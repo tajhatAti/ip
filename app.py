@@ -285,6 +285,105 @@ def init_db():
         )
     """)
 
+    # User preferences/settings
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            theme TEXT DEFAULT 'dark',
+            language TEXT DEFAULT 'en',
+            timezone TEXT DEFAULT 'UTC',
+            notifications_enabled INTEGER DEFAULT 1,
+            email_notifications INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # User notes/diary
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            color TEXT DEFAULT '#7C6CF6',
+            pinned INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Bookmarks
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            description TEXT,
+            category TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Categories/Tags
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            icon TEXT DEFAULT '📁',
+            color TEXT DEFAULT '#7C6CF6',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # API Keys
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            key_hash TEXT NOT NULL,
+            last_used TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Activity/Audit Log
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Notifications
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            is_read INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
     conn.commit()
     conn.close()
     logger.info("Database initialized at: %s", DB_PATH)
@@ -1015,12 +1114,572 @@ class APIKeyRevoke(BaseModel):
     key_id: int
 
 
+class NoteCreate(BaseModel):
+    title: str
+    content: str
+    color: Optional[str] = "#7C6CF6"
+
+
+class NoteUpdate(BaseModel):
+    id: int
+    title: Optional[str] = None
+    content: Optional[str] = None
+    color: Optional[str] = None
+    pinned: Optional[bool] = None
+
+
+class NoteDelete(BaseModel):
+    id: int
+
+
+class BookmarkCreate(BaseModel):
+    title: str
+    url: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+
+
+class BookmarkUpdate(BaseModel):
+    id: int
+    title: Optional[str] = None
+    url: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+
+
+class BookmarkDelete(BaseModel):
+    id: int
+
+
+class PasswordGeneratorRequest(BaseModel):
+    length: int = 16
+    include_uppercase: bool = True
+    include_numbers: bool = True
+    include_symbols: bool = True
+
+
+class CategoryCreate(BaseModel):
+    name: str
+    icon: Optional[str] = "📁"
+    color: Optional[str] = "#7C6CF6"
+
+
+class CategoryUpdate(BaseModel):
+    id: int
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class CategoryDelete(BaseModel):
+    id: int
+
+
+class UserPreferencesUpdate(BaseModel):
+    theme: Optional[str] = None
+    language: Optional[str] = None
+    timezone: Optional[str] = None
+    notifications_enabled: Optional[bool] = None
+    email_notifications: Optional[bool] = None
+
+
+class ActivityLogEntry(BaseModel):
+    action: str
+    details: Optional[str] = None
+
+
 @app.get("/api-keys")
 def list_api_keys(authorization: Optional[str] = Header(None)):
     user, _ = get_current_user_and_session(authorization)
     conn = get_db_connection()
     try:
-        # For now, return empty - you'd add a api_keys table similarly
-        return {"keys": []}
+        rows = conn.execute(
+            "SELECT id, name, last_used, created_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC",
+            (user["id"],)
+        ).fetchall()
+        return {"keys": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/api-keys")
+def create_api_key(payload: APIKeyCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    key = f"ahad_{secrets.token_hex(24)}"
+    key_hash = hash_password(key)
+    current_time = now_utc_str()
+    
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO api_keys (user_id, name, key_hash, created_at) VALUES (?, ?, ?, ?)",
+            (user["id"], payload.name, key_hash, current_time)
+        )
+        conn.commit()
+        return {"message": "API key created", "key": key, "id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.post("/api-keys/revoke")
+def revoke_api_key(payload: APIKeyRevoke, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM api_keys WHERE id = ? AND user_id = ?", 
+                          (payload.key_id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="API key not found")
+        conn.execute("DELETE FROM api_keys WHERE id = ?", (payload.key_id,))
+        conn.commit()
+        return {"message": "API key revoked"}
+    finally:
+        conn.close()
+
+
+# ================================
+# NOTES / DIARY
+# ================================
+@app.get("/notes")
+def list_notes(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM user_notes WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC",
+            (user["id"],)
+        ).fetchall()
+        return {"notes": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/notes")
+def create_note(payload: NoteCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    current_time = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO user_notes (user_id, title, content, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user["id"], payload.title, payload.content, payload.color, current_time, current_time)
+        )
+        conn.commit()
+        return {"message": "Note created", "id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/notes")
+def update_note(payload: NoteUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_notes WHERE id = ? AND user_id = ?", 
+                          (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Note not found")
+        
+        title = payload.title if payload.title is not None else row["title"]
+        content = payload.content if payload.content is not None else row["content"]
+        color = payload.color if payload.color is not None else row["color"]
+        pinned = 1 if payload.pinned else 0
+        
+        conn.execute(
+            "UPDATE user_notes SET title=?, content=?, color=?, pinned=?, updated_at=? WHERE id=?",
+            (title, content, color, pinned, now_utc_str(), payload.id)
+        )
+        conn.commit()
+        return {"message": "Note updated"}
+    finally:
+        conn.close()
+
+
+@app.delete("/notes")
+def delete_note(payload: NoteDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_notes WHERE id = ? AND user_id = ?", 
+                          (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Note not found")
+        conn.execute("DELETE FROM user_notes WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Note deleted"}
+    finally:
+        conn.close()
+
+
+# ================================
+# BOOKMARKS
+# ================================
+@app.get("/bookmarks")
+def list_bookmarks(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM user_bookmarks WHERE user_id = ? ORDER BY created_at DESC",
+            (user["id"],)
+        ).fetchall()
+        return {"bookmarks": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/bookmarks")
+def create_bookmark(payload: BookmarkCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    current_time = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO user_bookmarks (user_id, title, url, description, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], payload.title, payload.url, payload.description, payload.category, current_time, current_time)
+        )
+        conn.commit()
+        return {"message": "Bookmark created", "id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/bookmarks")
+def update_bookmark(payload: BookmarkUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_bookmarks WHERE id = ? AND user_id = ?", 
+                          (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+        
+        title = payload.title if payload.title is not None else row["title"]
+        url = payload.url if payload.url is not None else row["url"]
+        description = payload.description if payload.description is not None else row["description"]
+        category = payload.category if payload.category is not None else row["category"]
+        
+        conn.execute(
+            "UPDATE user_bookmarks SET title=?, url=?, description=?, category=?, updated_at=? WHERE id=?",
+            (title, url, description, category, now_utc_str(), payload.id)
+        )
+        conn.commit()
+        return {"message": "Bookmark updated"}
+    finally:
+        conn.close()
+
+
+@app.delete("/bookmarks")
+def delete_bookmark(payload: BookmarkDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_bookmarks WHERE id = ? AND user_id = ?", 
+                          (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+        conn.execute("DELETE FROM user_bookmarks WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Bookmark deleted"}
+    finally:
+        conn.close()
+
+
+# ================================
+# CATEGORIES / TAGS
+# ================================
+@app.get("/categories")
+def list_categories(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM user_categories WHERE user_id = ? ORDER BY name",
+            (user["id"],)
+        ).fetchall()
+        return {"categories": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/categories")
+def create_category(payload: CategoryCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    current_time = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO user_categories (user_id, name, icon, color, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user["id"], payload.name, payload.icon, payload.color, current_time)
+        )
+        conn.commit()
+        return {"message": "Category created", "id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/categories")
+def update_category(payload: CategoryUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_categories WHERE id = ? AND user_id = ?", 
+                          (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Category not found")
+        
+        name = payload.name if payload.name is not None else row["name"]
+        icon = payload.icon if payload.icon is not None else row["icon"]
+        color = payload.color if payload.color is not None else row["color"]
+        
+        conn.execute(
+            "UPDATE user_categories SET name=?, icon=?, color=? WHERE id=?",
+            (name, icon, color, payload.id)
+        )
+        conn.commit()
+        return {"message": "Category updated"}
+    finally:
+        conn.close()
+
+
+@app.delete("/categories")
+def delete_category(payload: CategoryDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_categories WHERE id = ? AND user_id = ?", 
+                          (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Category not found")
+        conn.execute("DELETE FROM user_categories WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Category deleted"}
+    finally:
+        conn.close()
+
+
+# ================================
+# USER PREFERENCES
+# ================================
+@app.get("/preferences")
+def get_preferences(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_preferences WHERE user_id = ?", (user["id"],)).fetchone()
+        if not row:
+            return {"theme": "dark", "language": "en", "timezone": "UTC", 
+                   "notifications_enabled": True, "email_notifications": True}
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@app.put("/preferences")
+def update_preferences(payload: UserPreferencesUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    current_time = now_utc_str()
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_preferences WHERE user_id = ?", (user["id"],)).fetchone()
+        
+        if row:
+            theme = payload.theme if payload.theme is not None else row["theme"]
+            language = payload.language if payload.language is not None else row["language"]
+            timezone = payload.timezone if payload.timezone is not None else row["timezone"]
+            notifications = 1 if payload.notifications_enabled else 0 if payload.notifications_enabled is not None else row["notifications_enabled"]
+            email_notif = 1 if payload.email_notifications else 0 if payload.email_notifications is not None else row["email_notifications"]
+            
+            conn.execute(
+                "UPDATE user_preferences SET theme=?, language=?, timezone=?, notifications_enabled=?, email_notifications=?, updated_at=? WHERE user_id=?",
+                (theme, language, timezone, notifications, email_notif, current_time, user["id"])
+            )
+        else:
+            conn.execute(
+                "INSERT INTO user_preferences (user_id, theme, language, timezone, notifications_enabled, email_notifications, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user["id"], payload.theme or "dark", payload.language or "en", payload.timezone or "UTC",
+                 1 if payload.notifications_enabled else 0, 1 if payload.email_notifications else 0, current_time, current_time)
+            )
+        conn.commit()
+        return {"message": "Preferences updated"}
+    finally:
+        conn.close()
+
+
+# ================================
+# PASSWORD GENERATOR
+# ================================
+@app.post("/generate-password")
+def generate_password(payload: PasswordGeneratorRequest, authorization: Optional[str] = Header(None)):
+    import string
+    
+    chars = ""
+    if payload.include_uppercase:
+        chars += string.ascii_uppercase
+    if payload.include_symbols:
+        chars += "!@#$%^&*()_+-=[]{}|;:,.<>?"
+    if payload.include_numbers:
+        chars += string.digits
+    chars += string.ascii_lowercase
+    
+    if not chars:
+        chars = string.ascii_lowercase
+    
+    password = ''.join(secrets.choice(chars) for _ in range(payload.length))
+    
+    return {"password": password, "length": payload.length}
+
+
+# ================================
+# NOTIFICATIONS
+# ================================
+@app.get("/notifications")
+def list_notifications(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+            (user["id"],)
+        ).fetchall()
+        return {"notifications": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/notifications/read")
+def mark_notification_read(notification_id: int, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        conn.execute("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?", 
+                    (notification_id, user["id"]))
+        conn.commit()
+        return {"message": "Notification marked as read"}
+    finally:
+        conn.close()
+
+
+@app.post("/notifications/read-all")
+def mark_all_read(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        conn.execute("UPDATE notifications SET is_read=1 WHERE user_id=?", (user["id"],))
+        conn.commit()
+        return {"message": "All notifications marked as read"}
+    finally:
+        conn.close()
+
+
+@app.delete("/notifications")
+def delete_notification(notification_id: int, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM notifications WHERE id=? AND user_id=?", (notification_id, user["id"]))
+        conn.commit()
+        return {"message": "Notification deleted"}
+    finally:
+        conn.close()
+
+
+# ================================
+# ACTIVITY LOG
+# ================================
+@app.get("/activity-log")
+def get_activity_log(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 100",
+            (user["id"],)
+        ).fetchall()
+        return {"activities": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/activity-log")
+def log_activity(payload: ActivityLogEntry, authorization: Optional[str] = Header(None), request: Request = None):
+    user, _ = get_current_user_and_session(authorization)
+    current_time = now_utc_str()
+    ip = client_ip(request) if request else "unknown"
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user["id"], payload.action, payload.details, ip, current_time)
+        )
+        conn.commit()
+        return {"message": "Activity logged"}
+    finally:
+        conn.close()
+
+
+# ================================
+# STATS / DASHBOARD DATA
+# ================================
+@app.get("/stats")
+def get_user_stats(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        notes_count = conn.execute(
+            "SELECT COUNT(*) as count FROM user_notes WHERE user_id = ?", (user["id"],)
+        ).fetchone()["count"]
+        
+        bookmarks_count = conn.execute(
+            "SELECT COUNT(*) as count FROM user_bookmarks WHERE user_id = ?", (user["id"],)
+        ).fetchone()["count"]
+        
+        vault_count = conn.execute(
+            "SELECT COUNT(*) as count FROM vault_entries WHERE user_id = ?", (user["id"],)
+        ).fetchone()["count"]
+        
+        sessions_count = conn.execute(
+            "SELECT COUNT(*) as count FROM sessions WHERE user_id = ?", (user["id"],)
+        ).fetchone()["count"]
+        
+        return {
+            "notes": notes_count,
+            "bookmarks": bookmarks_count,
+            "vault_entries": vault_count,
+            "active_sessions": sessions_count,
+            "member_since": user["created_at"]
+        }
+    finally:
+        conn.close()
+
+
+# ================================
+# EXPORT / IMPORT DATA
+# ================================
+@app.get("/export-data")
+def export_user_data(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        user_data = {
+            "username": user["username"],
+            "email": user["email"],
+            "phone": user["phone"],
+            "custom_code": user["custom_code"],
+            "links": json.loads(user["links"]) if user["links"] else [],
+            "created_at": user["created_at"]
+        }
+        
+        notes = conn.execute("SELECT * FROM user_notes WHERE user_id = ?", (user["id"],)).fetchall()
+        bookmarks = conn.execute("SELECT * FROM user_bookmarks WHERE user_id = ?", (user["id"],)).fetchall()
+        vault = conn.execute("SELECT * FROM vault_entries WHERE user_id = ?", (user["id"],)).fetchall()
+        
+        return {
+            "user": user_data,
+            "notes": [dict(n) for n in notes],
+            "bookmarks": [dict(b) for b in bookmarks],
+            "vault": [dict(v) for v in vault],
+            "exported_at": now_utc_str()
+        }
     finally:
         conn.close()
