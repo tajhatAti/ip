@@ -1,44 +1,60 @@
 # render.yaml - Render Auto-Deploy Configuration
-# Deploy to: https://render.com
+# ==============================================
+# এই ফাইল Render.com এ auto-deploy সেটআপ করে
+# ==============================================
 
 services:
   - type: web
-    name: ahad-co
+    name: ahad-co-auth
     runtime: python
-    region: singapore  # or frankfurt, oregon, ohio
-    plan: free  # or starter, professional
+    region: singapore
+    plan: free
     
-    # Build command
-    buildCommand: pip install -r requirements.txt
+    # Auto deploy from main branch
+    autoDeploy: true
     
-    # Start command
+    # Build settings
+    buildCommand: |
+      pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     
-    # Environment variables (set these in Render Dashboard for security)
+    # Environment variables (Production এ Render Dashboard এ set করুন)
     envVars:
       - key: DB_PATH
         value: /data/database.db
       
       - key: BREVO_API_KEY
-        sync: false  # Set in Render Dashboard
+        # ⚠️ Render Dashboard > Environment > Add Environment Variable
+        # Name: BREVO_API_KEY
+        # Value: আপনার Brevo API Key
+        sync: false
       
       - key: SENDER_EMAIL
-        sync: false  # Set in Render Dashboard
+        # ⚠️ Render Dashboard > Environment > Add Environment Variable
+        # Name: SENDER_EMAIL
+        # Value: noreply@yourdomain.com
+        sync: false
       
       - key: SENDER_NAME
         value: Ahad Co
       
       - key: OTP_EXPIRY_MINUTES
         value: "10"
+      
+      - key: PYTHON_VERSION
+        value: "3.11"
 
     # Persistent disk for database
     disk:
-      name: data
+      name: ahad-data
       mountPath: /data
       sizeGB: 1
 
-# Scheduled cron job for database backup (optional)
+# Health check
+healthCheckPath: /health
+
+# Cron jobs (optional - database backup)
 # cron:
-#   - name: "Daily Backup"
+#   - name: "Database Backup"
 #     schedule: "0 2 * * *"
-#     command: "cp /data/database.db /data/backup-$(date +%Y%m%d).db"
+#     command: "cp /data/database.db /data/backup-$(date +%Y%m%d).db && ls -lh /data/"

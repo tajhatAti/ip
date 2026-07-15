@@ -101,6 +101,17 @@ function clearOtpBoxes(containerId) {
   document.querySelectorAll(`#${containerId} input`).forEach(i => i.value = "");
 }
 
+// Store username in localStorage for persistence
+function setSignupUsername(username) {
+  signupUsername = username;
+  localStorage.setItem('ahad_signup_username', username);
+  console.log('Signup username stored:', username);
+}
+
+function getStoredSignupUsername() {
+  return localStorage.getItem('ahad_signup_username') || '';
+}
+
 setupOtpBoxes("otpBoxesSignup", () => document.getElementById("btnVerify").click());
 setupOtpBoxes("otpBoxesForgot", () => document.getElementById("btnForgot2").click());
 
@@ -134,12 +145,12 @@ document.getElementById("formSignup").addEventListener("submit", async e => {
   setLoading(btn, true);
   try {
     await api("/signup", "POST", { username, email, password });
-    signupUsername = username;
+    setSignupUsername(username); // Store for persistence
     clearOtpBoxes("otpBoxesSignup");
     document.getElementById("otpEmailNote").textContent = `Code sent to ${email}`;
     showScreen("screen-otp");
     startResendTimer(45);
-    toast("Verification code sent!", "success");
+    toast("Verification code sent! Check your email.", "success");
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -150,13 +161,24 @@ document.getElementById("formSignup").addEventListener("submit", async e => {
 document.getElementById("btnVerify").addEventListener("click", async () => {
   const btn = document.getElementById("btnVerify");
   const otp = getOtpValue("otpBoxesSignup");
+  
+  // Use stored username or fall back to input
+  let username = signupUsername || getStoredSignupUsername();
+  
+  if (!username) {
+    toast("Username not found. Please sign up again.", "error");
+    showScreen("screen-signup");
+    return;
+  }
+  
   if (otp.length !== 6) { toast("Enter the 6-digit code", "error"); return; }
 
   setLoading(btn, true);
   try {
-    await api("/verify", "POST", { username: signupUsername, otp });
+    const result = await api("/verify", "POST", { username: username, otp });
     toast("Email verified!", "success");
-    setTimeout(() => showScreen("screen-signin"), 800);
+    localStorage.removeItem('ahad_signup_username'); // Clean up
+    setTimeout(() => showScreen("screen-signin"), 1000);
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -165,9 +187,16 @@ document.getElementById("btnVerify").addEventListener("click", async () => {
 });
 
 document.getElementById("resendLink").addEventListener("click", async () => {
+  const username = signupUsername || getStoredSignupUsername();
+  if (!username) {
+    toast("Username not found. Please sign up again.", "error");
+    showScreen("screen-signup");
+    return;
+  }
+  
   try {
-    await api("/resend-otp", "POST", { username: signupUsername });
-    toast("New code sent", "success");
+    await api("/resend-otp", "POST", { username: username });
+    toast("New code sent!", "success");
     startResendTimer(45);
   } catch (err) {
     toast(err.message, "error");
