@@ -1,27 +1,27 @@
 import os
 import re
 import json
+import time
 import sqlite3
 import secrets
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from collections import defaultdict
 
 import bcrypt
 import requests
-from fastapi import FastAPI, HTTPException, Response, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 
 # ----------------------------
 # Logging
 # ----------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("ahad-co-app")
 
 # ----------------------------
@@ -29,22 +29,79 @@ logger = logging.getLogger("ahad-co-app")
 # ----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_FILE = BASE_DIR / "index.html"
+STATIC_DIR = BASE_DIR / "static"
 
 DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "database.db")))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "10"))
-
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 USERNAME_REGEX = re.compile(r"^[A-Za-z0-9_.-]{3,30}$")
+VALID_ENTRY_TYPES = {"phone", "email", "code", "link", "note"}
 
 # ----------------------------
 # App
 # ----------------------------
 app = FastAPI(title="Ahad Co Auth System")
 
-app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# ----------------------------
+# Simple in-memory rate limiter
+# ----------------------------
+RATE_LIMIT_WINDOW = 300
+RATE_LIMIT_MAX_ATTEMPTS = 6
+_attempts = defaultdict(list)
+
+
+def rate_limit(key: str):
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+    _attempts[key] = [t for t in _attempts[key] if t > window_start]
+    if len(_attempts[key]) >= RATE_LIMIT_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again in a few minutes.")
+    _attempts[key].append(now)
+
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def parse_device(user_agent: str) -> str:
+    ua = (user_agent or "").lower()
+    if "android" in ua:
+        os_name = "Android"
+    elif "iphone" in ua or "ipad" in ua:
+        os_name = "iOS"
+    elif "windows" in ua:
+        os_name = "Windows"
+    elif "mac os" in ua or "macintosh" in ua:
+        os_name = "macOS"
+    elif "linux" in ua:
+        os_name = "Linux"
+    else:
+        os_name = "Unknown OS"
+
+    if "chrome" in ua and "edg" not in ua:
+        browser = "Chrome"
+    elif "firefox" in ua:
+        browser = "Firefox"
+    elif "safari" in ua and "chrome" not in ua:
+        browser = "Safari"
+    elif "edg" in ua:
+        browser = "Edge"
+    else:
+        browser = "Browser"
+
+    return f"{browser} on {os_name}"
 
 
 # ----------------------------
@@ -96,8 +153,33 @@ class ProfileUpdate(BaseModel):
     links: Optional[List[LinkItem]] = None
 
 
+class VaultEntryCreate(BaseModel):
+    type: str
+    label: str
+    value: str
+
+
+class VaultEntryUpdate(BaseModel):
+    id: int
+    type: Optional[str] = None
+    label: Optional[str] = None
+    value: Optional[str] = None
+
+
+class VaultEntryDelete(BaseModel):
+    id: int
+
+
+class SessionRevoke(BaseModel):
+    session_id: int
+
+
+class AccountDelete(BaseModel):
+    password: str
+
+
 # ----------------------------
-# Helpers
+# DB Helpers
 # ----------------------------
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -110,6 +192,7 @@ def now_utc_str() -> str:
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -129,12 +212,37 @@ def init_db():
             reset_otp TEXT,
             reset_otp_created_at TEXT,
             reset_verified INTEGER NOT NULL DEFAULT 0,
-            token TEXT,
             phone TEXT,
             custom_code TEXT,
             links TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            device_info TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vault_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            label TEXT NOT NULL,
+            value TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     """)
 
@@ -149,20 +257,16 @@ init_db()
 def validate_username(username: str) -> str:
     username = username.strip()
     if not USERNAME_REGEX.fullmatch(username):
-        raise HTTPException(
-            status_code=400,
-            detail="ইউজারনেম ৩-৩০ অক্ষরের হতে হবে এবং শুধু letters, numbers, _, ., - ব্যবহার করা যাবে।"
-        )
+        raise HTTPException(status_code=400, detail="Username must be 3-30 characters (letters, numbers, _, ., - only).")
     return username
 
 
 def validate_password(password: str) -> str:
     password = password.strip()
     if len(password) < 6:
-        raise HTTPException(
-            status_code=400,
-            detail="পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।"
-        )
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="Password is too long (max 72 characters).")
     return password
 
 
@@ -180,12 +284,28 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8")
-        )
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except Exception:
         return False
+
+
+def create_session(user_id: int, request: Request) -> str:
+    token = generate_token()
+    device_info = parse_device(request.headers.get("user-agent", ""))
+    ip = client_ip(request)
+    current_time = now_utc_str()
+
+    conn = get_db_connection()
+    try:
+        conn.execute("""
+            INSERT INTO sessions (user_id, token, device_info, ip_address, created_at, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, token, device_info, ip, current_time, current_time))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return token
 
 
 def send_email(receiver_email: str, subject: str, otp: str, username: str, purpose: str):
@@ -195,25 +315,25 @@ def send_email(receiver_email: str, subject: str, otp: str, username: str, purpo
 
     if not brevo_api_key or not sender_email:
         logger.error("BREVO_API_KEY or SENDER_EMAIL missing.")
-        raise HTTPException(status_code=500, detail="BREVO_API_KEY / SENDER_EMAIL সেট করা নেই।")
+        raise HTTPException(status_code=500, detail="Email service is not configured.")
 
-    headers = {
-        "accept": "application/json",
-        "api-key": brevo_api_key,
-        "content-type": "application/json"
-    }
+    headers = {"accept": "application/json", "api-key": brevo_api_key, "content-type": "application/json"}
 
     html_content = f"""
     <html>
-      <body style="font-family: Arial, sans-serif; line-height:1.6;">
-        <h2>{purpose}</h2>
-        <p>Hello <b>{username}</b>,</p>
-        <p>Your code is:</p>
-        <div style="font-size:28px;font-weight:bold;letter-spacing:4px;color:#7C6CF6;">
-          {otp}
+      <body style="font-family: Arial, sans-serif; line-height:1.6; background:#0B0C14; padding:24px;">
+        <div style="max-width:420px;margin:0 auto;background:#14152a;border-radius:16px;padding:28px;color:#F5F5FA;">
+          <h2 style="color:#7C6CF6;margin-top:0;">{purpose}</h2>
+          <p>Hello <b>{username}</b>,</p>
+          <p>Your verification code is:</p>
+          <div style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#2FD9C4;text-align:center;
+                      background:rgba(255,255,255,0.06);padding:16px;border-radius:12px;margin:16px 0;">
+            {otp}
+          </div>
+          <p style="color:#A0A0B2;font-size:13px;">This code expires in {OTP_EXPIRY_MINUTES} minutes.
+          If you did not request this, you can safely ignore this email.</p>
+          <p style="color:#A0A0B2;font-size:12px;margin-top:24px;">— Ahad Co</p>
         </div>
-        <p>This code will expire in <b>{OTP_EXPIRY_MINUTES} minutes</b>.</p>
-        <p>If you did not request this, please ignore this email.</p>
       </body>
     </html>
     """
@@ -228,26 +348,33 @@ def send_email(receiver_email: str, subject: str, otp: str, username: str, purpo
 
     try:
         response = requests.post(BREVO_API_URL, json=payload, headers=headers, timeout=20)
-        logger.info("Brevo status: %s | %s", response.status_code, response.text)
+        logger.info("Brevo status: %s", response.status_code)
         if response.status_code not in (200, 201, 202):
-            raise HTTPException(status_code=500, detail=f"Email failed: {response.text}")
-    except requests.RequestException as e:
+            raise HTTPException(status_code=500, detail="Failed to send email. Please try again.")
+    except requests.RequestException:
         logger.exception("Brevo request failed")
-        raise HTTPException(status_code=500, detail=f"Email request failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Email service is temporarily unavailable.")
 
 
-def get_current_user(authorization: Optional[str] = Header(None)) -> sqlite3.Row:
+def get_current_user_and_session(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="লগইন করা নেই। আবার লগইন করুন।")
+        raise HTTPException(status_code=401, detail="Not authenticated. Please sign in.")
 
     token = authorization.split(" ", 1)[1].strip()
-
     conn = get_db_connection()
     try:
-        row = conn.execute("SELECT * FROM users WHERE token = ?", (token,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=401, detail="সেশন মেয়াদ শেষ। আবার লগইন করুন।")
-        return row
+        session_row = conn.execute("SELECT * FROM sessions WHERE token = ?", (token,)).fetchone()
+        if not session_row:
+            raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+
+        user_row = conn.execute("SELECT * FROM users WHERE id = ?", (session_row["user_id"],)).fetchone()
+        if not user_row:
+            raise HTTPException(status_code=401, detail="Account not found.")
+
+        conn.execute("UPDATE sessions SET last_seen = ? WHERE id = ?", (now_utc_str(), session_row["id"]))
+        conn.commit()
+
+        return user_row, session_row
     finally:
         conn.close()
 
@@ -258,7 +385,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> sqlite3.Row
 @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def read_index():
     if not INDEX_FILE.exists():
-        raise HTTPException(status_code=404, detail="index.html file পাওয়া যায়নি।")
+        raise HTTPException(status_code=404, detail="index.html not found.")
     return FileResponse(INDEX_FILE)
 
 
@@ -266,17 +393,18 @@ def read_index():
 def health():
     return {
         "status": "ok",
-        "db_path": str(DB_PATH),
         "brevo_api_key_set": bool(os.getenv("BREVO_API_KEY", "").strip()),
         "sender_email_set": bool(os.getenv("SENDER_EMAIL", "").strip()),
     }
 
 
 # ----------------------------
-# Signup / Verify / Resend
+# Signup / Verify (auto-login) / Resend
 # ----------------------------
 @app.post("/signup")
-def signup(user: UserSignup):
+def signup(user: UserSignup, request: Request):
+    rate_limit(f"{client_ip(request)}:signup")
+
     username = validate_username(user.username)
     email = str(user.email).strip().lower()
     password = validate_password(user.password)
@@ -291,11 +419,10 @@ def signup(user: UserSignup):
 
     try:
         existing = cursor.execute(
-            "SELECT id FROM users WHERE username = ? OR email = ?",
-            (username, email)
+            "SELECT id FROM users WHERE username = ? OR email = ?", (username, email)
         ).fetchone()
         if existing:
-            raise HTTPException(status_code=400, detail="এই ইউজারনেম বা ইমেইল আগে থেকেই আছে।")
+            raise HTTPException(status_code=400, detail="Username or email is already taken.")
 
         cursor.execute("""
             INSERT INTO users (username, email, password, otp, otp_created_at,
@@ -305,9 +432,8 @@ def signup(user: UserSignup):
         conn.commit()
         inserted_user_id = cursor.lastrowid
 
-        send_email(email, "Your Verification OTP", otp, username, "Email Verification")
-
-        return {"message": "সাইনআপ সফল! আপনার ইমেইলে OTP পাঠানো হয়েছে।"}
+        send_email(email, "Verify your Ahad Co account", otp, username, "Email Verification")
+        return {"message": "Account created. Check your email for the verification code."}
 
     except HTTPException:
         if inserted_user_id:
@@ -315,24 +441,24 @@ def signup(user: UserSignup):
             conn.commit()
         raise
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="এই ইউজারনেম বা ইমেইল আগে থেকেই আছে।")
+        raise HTTPException(status_code=400, detail="Username or email is already taken.")
     finally:
         conn.close()
 
 
 @app.post("/resend-otp")
-def resend_otp(payload: ResendOTP):
+def resend_otp(payload: ResendOTP, request: Request):
     username = validate_username(payload.username)
+    rate_limit(f"{client_ip(request)}:resend:{username}")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        row = cursor.execute(
-            "SELECT id, email, is_verified FROM users WHERE username = ?", (username,)
-        ).fetchone()
+        row = cursor.execute("SELECT id, email, is_verified FROM users WHERE username = ?", (username,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="ইউজারনেম পাওয়া যায়নি।")
+            raise HTTPException(status_code=404, detail="Account not found.")
         if row["is_verified"] == 1:
-            return {"message": "অ্যাকাউন্ট ইতিমধ্যেই ভেরিফাইড।"}
+            return {"message": "Account is already verified."}
 
         new_otp = generate_otp()
         current_time = now_utc_str()
@@ -340,87 +466,134 @@ def resend_otp(payload: ResendOTP):
                         (new_otp, current_time, current_time, row["id"]))
         conn.commit()
 
-        send_email(row["email"], "Your Verification OTP", new_otp, username, "Email Verification")
-        return {"message": "নতুন OTP আপনার ইমেইলে পাঠানো হয়েছে।"}
+        send_email(row["email"], "Your new verification code", new_otp, username, "Email Verification")
+        return {"message": "A new code has been sent to your email."}
     finally:
         conn.close()
 
 
 @app.post("/verify")
-def verify_otp(user: UserVerify):
+def verify_otp(user: UserVerify, request: Request):
     username = validate_username(user.username)
     otp = user.otp.strip()
+    rate_limit(f"{client_ip(request)}:verify:{username}")
+
     if not otp.isdigit() or len(otp) != 6:
-        raise HTTPException(status_code=400, detail="OTP অবশ্যই ৬ সংখ্যার হতে হবে।")
+        raise HTTPException(status_code=400, detail="Code must be 6 digits.")
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         row = cursor.execute(
-            "SELECT id, otp, otp_created_at, is_verified FROM users WHERE username = ?", (username,)
+            "SELECT id, otp, otp_created_at, is_verified, username FROM users WHERE username = ?", (username,)
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="ইউজারনেম পাওয়া যায়নি।")
-        if row["is_verified"] == 1:
-            return {"message": "অ্যাকাউন্ট ইতিমধ্যেই ভেরিফাইড।"}
+            raise HTTPException(status_code=404, detail="Account not found.")
 
-        db_otp = row["otp"]
-        otp_created_at = row["otp_created_at"]
-        if not db_otp or not otp_created_at:
-            raise HTTPException(status_code=400, detail="OTP পাওয়া যায়নি। নতুন OTP রিকোয়েস্ট করুন।")
+        if row["is_verified"] == 0:
+            db_otp = row["otp"]
+            otp_created_at = row["otp_created_at"]
+            if not db_otp or not otp_created_at:
+                raise HTTPException(status_code=400, detail="No active code found. Please resend.")
 
-        created_time = datetime.fromisoformat(otp_created_at)
-        if now_utc() > created_time + timedelta(minutes=OTP_EXPIRY_MINUTES):
-            raise HTTPException(status_code=400, detail="OTP মেয়াদ শেষ হয়ে গেছে। নতুন OTP নিন।")
-        if db_otp != otp:
-            raise HTTPException(status_code=400, detail="ভুল OTP কোড!")
+            created_time = datetime.fromisoformat(otp_created_at)
+            if now_utc() > created_time + timedelta(minutes=OTP_EXPIRY_MINUTES):
+                raise HTTPException(status_code=400, detail="Code has expired. Please resend.")
+            if db_otp != otp:
+                raise HTTPException(status_code=400, detail="Incorrect code.")
 
-        cursor.execute("""
-            UPDATE users SET is_verified=1, otp=NULL, otp_created_at=NULL, updated_at=?
-            WHERE id=?
-        """, (now_utc_str(), row["id"]))
-        conn.commit()
-        return {"message": "ভেরিফিকেশন সফল!"}
+            cursor.execute("""
+                UPDATE users SET is_verified=1, otp=NULL, otp_created_at=NULL, updated_at=?
+                WHERE id=?
+            """, (now_utc_str(), row["id"]))
+            conn.commit()
+
+        # Auto-login: create a session immediately after successful verification
+        token = create_session(row["id"], request)
+        return {"message": "Verification successful!", "token": token, "username": row["username"]}
     finally:
         conn.close()
 
 
 # ----------------------------
-# Login / Logout
+# Login / Logout / Sessions
 # ----------------------------
 @app.post("/login")
-def login(user: UserLogin):
-    username = validate_username(user.username)
+def login(user: UserLogin, request: Request):
+    identifier = user.username.strip()
+    rate_limit(f"{client_ip(request)}:login:{identifier.lower()}")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        row = cursor.execute(
-            "SELECT id, username, password, is_verified FROM users WHERE username = ?", (username,)
-        ).fetchone()
+        if "@" in identifier:
+            row = cursor.execute(
+                "SELECT id, username, password, is_verified FROM users WHERE email = ?", (identifier.lower(),)
+            ).fetchone()
+        else:
+            row = cursor.execute(
+                "SELECT id, username, password, is_verified FROM users WHERE username = ?", (identifier,)
+            ).fetchone()
+
         if not row or not verify_password(user.password, row["password"]):
-            raise HTTPException(status_code=400, detail="ভুল ইউজারনেম বা পাসওয়ার্ড।")
+            raise HTTPException(status_code=400, detail="Incorrect username/email or password.")
         if row["is_verified"] == 0:
-            raise HTTPException(status_code=400, detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।")
-
-        token = generate_token()
-        cursor.execute("UPDATE users SET token=?, updated_at=? WHERE id=?",
-                        (token, now_utc_str(), row["id"]))
-        conn.commit()
-
-        return {"message": "লগইন সফল!", "username": row["username"], "token": token}
+            raise HTTPException(status_code=400, detail="Please verify your email before signing in.")
     finally:
         conn.close()
+
+    token = create_session(row["id"], request)
+    return {"message": "Login successful!", "username": row["username"], "token": token}
 
 
 @app.post("/logout")
 def logout(authorization: Optional[str] = Header(None)):
-    current_user = get_current_user(authorization)
+    _, session_row = get_current_user_and_session(authorization)
     conn = get_db_connection()
     try:
-        conn.execute("UPDATE users SET token=NULL, updated_at=? WHERE id=?",
-                      (now_utc_str(), current_user["id"]))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_row["id"],))
         conn.commit()
-        return {"message": "লগআউট সফল!"}
+        return {"message": "Logged out successfully."}
+    finally:
+        conn.close()
+
+
+@app.get("/sessions")
+def list_sessions(authorization: Optional[str] = Header(None)):
+    user, current_session = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, device_info, ip_address, created_at, last_seen FROM sessions WHERE user_id = ? ORDER BY last_seen DESC",
+            (user["id"],)
+        ).fetchall()
+        return {
+            "sessions": [
+                {
+                    "id": r["id"],
+                    "device_info": r["device_info"],
+                    "ip_address": r["ip_address"],
+                    "created_at": r["created_at"],
+                    "last_seen": r["last_seen"],
+                    "is_current": r["id"] == current_session["id"]
+                } for r in rows
+            ]
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/sessions/revoke")
+def revoke_session(payload: SessionRevoke, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM sessions WHERE id = ? AND user_id = ?", (payload.session_id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        conn.execute("DELETE FROM sessions WHERE id = ?", (payload.session_id,))
+        conn.commit()
+        return {"message": "Session logged out."}
     finally:
         conn.close()
 
@@ -429,14 +602,16 @@ def logout(authorization: Optional[str] = Header(None)):
 # Forgot Password
 # ----------------------------
 @app.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest):
+def forgot_password(payload: ForgotPasswordRequest, request: Request):
     email = str(payload.email).strip().lower()
+    rate_limit(f"{client_ip(request)}:forgot:{email}")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         row = cursor.execute("SELECT id, username FROM users WHERE email = ?", (email,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="এই ইমেইলে কোনো অ্যাকাউন্ট নেই।")
+            return {"message": "If this email exists, a reset code has been sent."}
 
         otp = generate_otp()
         current_time = now_utc_str()
@@ -446,16 +621,18 @@ def forgot_password(payload: ForgotPasswordRequest):
         """, (otp, current_time, current_time, row["id"]))
         conn.commit()
 
-        send_email(email, "Password Reset Code", otp, row["username"], "Password Reset")
-        return {"message": "রিসেট কোড আপনার ইমেইলে পাঠানো হয়েছে।"}
+        send_email(email, "Reset your Ahad Co password", otp, row["username"], "Password Reset")
+        return {"message": "If this email exists, a reset code has been sent."}
     finally:
         conn.close()
 
 
 @app.post("/verify-reset-otp")
-def verify_reset_otp(payload: VerifyResetOTP):
+def verify_reset_otp(payload: VerifyResetOTP, request: Request):
     email = str(payload.email).strip().lower()
     otp = payload.otp.strip()
+    rate_limit(f"{client_ip(request)}:resetverify:{email}")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -463,26 +640,27 @@ def verify_reset_otp(payload: VerifyResetOTP):
             "SELECT id, reset_otp, reset_otp_created_at FROM users WHERE email = ?", (email,)
         ).fetchone()
         if not row or not row["reset_otp"]:
-            raise HTTPException(status_code=400, detail="আগে রিসেট কোড রিকোয়েস্ট করুন।")
+            raise HTTPException(status_code=400, detail="Please request a reset code first.")
 
         created_time = datetime.fromisoformat(row["reset_otp_created_at"])
         if now_utc() > created_time + timedelta(minutes=OTP_EXPIRY_MINUTES):
-            raise HTTPException(status_code=400, detail="কোডের মেয়াদ শেষ। আবার রিকোয়েস্ট করুন।")
+            raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
         if row["reset_otp"] != otp:
-            raise HTTPException(status_code=400, detail="ভুল কোড।")
+            raise HTTPException(status_code=400, detail="Incorrect code.")
 
-        cursor.execute("UPDATE users SET reset_verified=1, updated_at=? WHERE id=?",
-                        (now_utc_str(), row["id"]))
+        cursor.execute("UPDATE users SET reset_verified=1, updated_at=? WHERE id=?", (now_utc_str(), row["id"]))
         conn.commit()
-        return {"message": "কোড সঠিক। এখন নতুন পাসওয়ার্ড দিন।"}
+        return {"message": "Code verified. You can now set a new password."}
     finally:
         conn.close()
 
 
 @app.post("/reset-password")
-def reset_password(payload: ResetPassword):
+def reset_password(payload: ResetPassword, request: Request):
     email = str(payload.email).strip().lower()
     new_password = validate_password(payload.new_password)
+    rate_limit(f"{client_ip(request)}:resetpw:{email}")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -490,26 +668,28 @@ def reset_password(payload: ResetPassword):
             "SELECT id, reset_otp, reset_verified FROM users WHERE email = ?", (email,)
         ).fetchone()
         if not row or row["reset_verified"] != 1 or row["reset_otp"] != payload.otp.strip():
-            raise HTTPException(status_code=400, detail="আগে কোড ভেরিফাই করুন।")
+            raise HTTPException(status_code=400, detail="Please verify the reset code first.")
 
         hashed_pw = hash_password(new_password)
         cursor.execute("""
             UPDATE users SET password=?, reset_otp=NULL, reset_otp_created_at=NULL,
-                reset_verified=0, token=NULL, updated_at=?
+                reset_verified=0, updated_at=?
             WHERE id=?
         """, (hashed_pw, now_utc_str(), row["id"]))
+        # Reset password -> log out of all devices for safety
+        cursor.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
         conn.commit()
-        return {"message": "পাসওয়ার্ড পরিবর্তন সফল!"}
+        return {"message": "Password updated successfully. Please sign in again."}
     finally:
         conn.close()
 
 
 # ----------------------------
-# Profile (protected)
+# Profile
 # ----------------------------
 @app.get("/profile")
 def get_profile(authorization: Optional[str] = Header(None)):
-    user = get_current_user(authorization)
+    user, _ = get_current_user_and_session(authorization)
     links = json.loads(user["links"]) if user["links"] else []
     return {
         "username": user["username"],
@@ -523,7 +703,7 @@ def get_profile(authorization: Optional[str] = Header(None)):
 
 @app.post("/profile/update")
 def update_profile(payload: ProfileUpdate, authorization: Optional[str] = Header(None)):
-    user = get_current_user(authorization)
+    user, _ = get_current_user_and_session(authorization)
     conn = get_db_connection()
     try:
         phone = payload.phone if payload.phone is not None else user["phone"]
@@ -535,6 +715,106 @@ def update_profile(payload: ProfileUpdate, authorization: Optional[str] = Header
             WHERE id=?
         """, (phone, custom_code, links_json, now_utc_str(), user["id"]))
         conn.commit()
-        return {"message": "প্রোফাইল আপডেট হয়েছে।"}
+        return {"message": "Profile updated successfully."}
+    finally:
+        conn.close()
+
+
+# ----------------------------
+# Data Vault (multiple phone/email/code/link/note entries)
+# ----------------------------
+@app.get("/vault")
+def list_vault(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, type, label, value, created_at, updated_at FROM vault_entries WHERE user_id = ? ORDER BY created_at DESC",
+            (user["id"],)
+        ).fetchall()
+        return {"entries": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/vault/add")
+def add_vault_entry(payload: VaultEntryCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    entry_type = payload.type.strip().lower()
+    if entry_type not in VALID_ENTRY_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid entry type.")
+    label = payload.label.strip()
+    value = payload.value.strip()
+    if not label or not value:
+        raise HTTPException(status_code=400, detail="Label and value are required.")
+
+    conn = get_db_connection()
+    try:
+        current_time = now_utc_str()
+        cursor = conn.execute("""
+            INSERT INTO vault_entries (user_id, type, label, value, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user["id"], entry_type, label, value, current_time, current_time))
+        conn.commit()
+        return {"message": "Entry added.", "id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.post("/vault/update")
+def update_vault_entry(payload: VaultEntryUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM vault_entries WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+
+        entry_type = payload.type.strip().lower() if payload.type else row["type"]
+        if entry_type not in VALID_ENTRY_TYPES:
+            raise HTTPException(status_code=400, detail="Invalid entry type.")
+        label = payload.label.strip() if payload.label is not None else row["label"]
+        value = payload.value.strip() if payload.value is not None else row["value"]
+
+        conn.execute("""
+            UPDATE vault_entries SET type=?, label=?, value=?, updated_at=? WHERE id=?
+        """, (entry_type, label, value, now_utc_str(), payload.id))
+        conn.commit()
+        return {"message": "Entry updated."}
+    finally:
+        conn.close()
+
+
+@app.post("/vault/delete")
+def delete_vault_entry(payload: VaultEntryDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM vault_entries WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+        conn.execute("DELETE FROM vault_entries WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Entry deleted."}
+    finally:
+        conn.close()
+
+
+# ----------------------------
+# Account Deletion
+# ----------------------------
+@app.post("/account/delete")
+def delete_account(payload: AccountDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    if not verify_password(payload.password, user["password"]):
+        raise HTTPException(status_code=400, detail="Incorrect password.")
+
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM vault_entries WHERE user_id = ?", (user["id"],))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+        conn.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+        conn.commit()
+        return {"message": "Account deleted permanently."}
     finally:
         conn.close()
