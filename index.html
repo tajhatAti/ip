@@ -1,402 +1,230 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brevo OTP Login System</title>
-    <style>
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #eef2ff, #f8fafc);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            padding: 30px 15px;
-            color: #1f2937;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 430px;
-        }
-
-        .card {
-            background: #ffffff;
-            border-radius: 16px;
-            padding: 24px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            margin-bottom: 18px;
-        }
-
-        h1, h2 {
-            margin-top: 0;
-            text-align: center;
-        }
-
-        h1 {
-            font-size: 26px;
-            margin-bottom: 10px;
-        }
-
-        .top-note {
-            text-align: center;
-            margin-top: 0;
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        label {
-            display: block;
-            margin-top: 12px;
-            margin-bottom: 6px;
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        input {
-            width: 100%;
-            padding: 12px 14px;
-            border-radius: 10px;
-            border: 1px solid #d1d5db;
-            outline: none;
-            font-size: 15px;
-        }
-
-        input:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-        }
-
-        button {
-            width: 100%;
-            border: none;
-            border-radius: 10px;
-            padding: 12px 14px;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            margin-top: 14px;
-        }
-
-        .btn-primary {
-            background: #2563eb;
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            background: #1d4ed8;
-        }
-
-        .btn-secondary {
-            background: #e5e7eb;
-            color: #111827;
-        }
-
-        .btn-secondary:hover {
-            background: #d1d5db;
-        }
-
-        .message {
-            margin-top: 12px;
-            padding: 10px 12px;
-            border-radius: 10px;
-            font-size: 14px;
-            display: none;
-            text-align: center;
-        }
-
-        .message.error {
-            display: block;
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .message.success {
-            display: block;
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        .switch-links {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-top: 8px;
-        }
-
-        .switch-links button {
-            width: auto;
-            margin-top: 0;
-            padding: 8px 12px;
-            font-size: 13px;
-            border-radius: 999px;
-        }
-
-        .success-box {
-            text-align: center;
-        }
-
-        .success-box h2 {
-            color: #15803d;
-        }
-
-        .small {
-            font-size: 13px;
-            color: #6b7280;
-            text-align: center;
-            margin-top: 10px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ahad Co</title>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="container">
-        <div class="card">
-            <h1>🔐 OTP Login System</h1>
-            <p class="top-note">Brevo API দিয়ে Signup → OTP → Verify → Login</p>
 
-            <div class="switch-links">
-                <button class="btn-secondary" onclick="showBox('signup-box')">Sign Up</button>
-                <button class="btn-secondary" onclick="showBox('verify-box')">Verify OTP</button>
-                <button class="btn-secondary" onclick="showBox('login-box')">Login</button>
-            </div>
+<div class="bg-blobs">
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+  <div class="blob blob3"></div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<header class="topbar">
+  <div class="logo"><span class="logo-dot"></span> Ahad Co</div>
+</header>
+
+<main class="stage">
+
+  <!-- SIGN UP -->
+  <section class="screen active" id="screen-signup">
+    <div class="glass-card">
+      <h1>Create Account</h1>
+      <p class="tagline">Secure. Simple. Yours.</p>
+      <form id="formSignup">
+        <div class="field">
+          <input type="text" id="su_username" required placeholder=" ">
+          <label>Username</label>
         </div>
-
-        <div id="signup-box" class="card">
-            <h2>নতুন অ্যাকাউন্ট তৈরি</h2>
-
-            <label for="sign-user">ইউজারনেম</label>
-            <input type="text" id="sign-user" placeholder="যেমন: Ahad67" autocomplete="username">
-
-            <label for="sign-email">ইমেইল</label>
-            <input type="email" id="sign-email" placeholder="আপনার ইমেইল" autocomplete="email">
-
-            <label for="sign-pass">পাসওয়ার্ড</label>
-            <input type="password" id="sign-pass" placeholder="কমপক্ষে ৬ অক্ষর" autocomplete="new-password">
-
-            <button class="btn-primary" onclick="handleSignup(this)">সাইনআপ করুন</button>
-            <div id="signup-msg" class="message"></div>
+        <div class="field">
+          <input type="email" id="su_email" required placeholder=" ">
+          <label>Email</label>
         </div>
-
-        <div id="verify-box" class="card hidden">
-            <h2>OTP ভেরিফাই করুন</h2>
-
-            <label for="verify-user">ইউজারনেম</label>
-            <input type="text" id="verify-user" placeholder="আপনার ইউজারনেম">
-
-            <label for="verify-otp">৬ সংখ্যার OTP</label>
-            <input type="text" id="verify-otp" placeholder="যেমন: 123456" maxlength="6" inputmode="numeric">
-
-            <button class="btn-primary" onclick="handleVerify(this)">ভেরিফাই করুন</button>
-            <button class="btn-secondary" onclick="handleResendOTP(this)">আবার OTP পাঠান</button>
-
-            <div id="verify-msg" class="message"></div>
-            <div class="small">ইমেইল না পেলে Spam folder-ও চেক করুন।</div>
+        <div class="field">
+          <input type="password" id="su_password" required placeholder=" ">
+          <label>Password</label>
+          <span class="eye" data-target="su_password">👁</span>
         </div>
-
-        <div id="login-box" class="card hidden">
-            <h2>লগইন করুন</h2>
-
-            <label for="login-user">ইউজারনেম</label>
-            <input type="text" id="login-user" placeholder="আপনার ইউজারনেম" autocomplete="username">
-
-            <label for="login-pass">পাসওয়ার্ড</label>
-            <input type="password" id="login-pass" placeholder="আপনার পাসওয়ার্ড" autocomplete="current-password">
-
-            <button class="btn-primary" onclick="handleLogin(this)">লগইন</button>
-            <div id="login-msg" class="message"></div>
-        </div>
-
-        <div id="dashboard-box" class="card hidden">
-            <div class="success-box">
-                <h2>🎉 লগইন সফল হয়েছে!</h2>
-                <p id="welcome-text">আপনি এখন সিস্টেমে লগইন করেছেন।</p>
-                <button class="btn-secondary" onclick="logout()">Logout</button>
-            </div>
-        </div>
+        <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
+        <span class="strength-label" id="strengthLabel"></span>
+        <button type="submit" class="btn-primary" id="btnSignup"><span>Sign Up</span></button>
+      </form>
+      <p class="switch-link">Already have an account? <a onclick="showScreen('screen-signin')">Sign In</a></p>
     </div>
+  </section>
 
-    <script>
-        function showBox(id) {
-            const boxes = ["signup-box", "verify-box", "login-box", "dashboard-box"];
-            boxes.forEach(boxId => {
-                document.getElementById(boxId).classList.add("hidden");
-            });
-            document.getElementById(id).classList.remove("hidden");
-            clearAllMessages();
-        }
+  <!-- OTP VERIFY (signup) -->
+  <section class="screen" id="screen-otp">
+    <div class="glass-card">
+      <h1>Verify Email</h1>
+      <p class="tagline" id="otpEmailNote">Enter the 6-digit code we sent you</p>
+      <div class="otp-boxes" id="otpBoxesSignup">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+      </div>
+      <button class="btn-primary" id="btnVerify"><span>Verify</span></button>
+      <p class="resend-row">
+        <span id="resendTimer">Resend in 00:45</span>
+        <a id="resendLink" class="resend-link disabled">Resend Code</a>
+      </p>
+    </div>
+  </section>
 
-        function clearAllMessages() {
-            ["signup-msg", "verify-msg", "login-msg"].forEach(id => {
-                const el = document.getElementById(id);
-                el.className = "message";
-                el.textContent = "";
-            });
-        }
+  <!-- SIGN IN -->
+  <section class="screen" id="screen-signin">
+    <div class="glass-card">
+      <h1>Welcome Back</h1>
+      <p class="tagline">Secure. Simple. Yours.</p>
+      <form id="formSignin">
+        <div class="field">
+          <input type="text" id="si_username" required placeholder=" ">
+          <label>Username or Email</label>
+        </div>
+        <div class="field">
+          <input type="password" id="si_password" required placeholder=" ">
+          <label>Password</label>
+          <span class="eye" data-target="si_password">👁</span>
+        </div>
+        <div class="row-between">
+          <label class="toggle">
+            <input type="checkbox" id="rememberMe">
+            <span class="slider"></span> Remember me
+          </label>
+          <a onclick="showScreen('screen-forgot1')" class="forgot-link">Forgot Password?</a>
+        </div>
+        <button type="submit" class="btn-primary" id="btnSignin"><span>Sign In</span></button>
+      </form>
+      <p class="switch-link">Don't have an account? <a onclick="showScreen('screen-signup')">Sign Up</a></p>
+    </div>
+  </section>
 
-        function setMessage(id, text, type = "error") {
-            const el = document.getElementById(id);
-            el.textContent = text;
-            el.className = `message ${type}`;
-        }
+  <!-- FORGOT PASSWORD STEP 1 -->
+  <section class="screen" id="screen-forgot1">
+    <div class="glass-card">
+      <h1>Reset Password</h1>
+      <p class="tagline">Enter your email to get a reset code</p>
+      <form id="formForgot1">
+        <div class="field">
+          <input type="email" id="fp_email" required placeholder=" ">
+          <label>Email</label>
+        </div>
+        <button type="submit" class="btn-primary" id="btnForgot1"><span>Send Code</span></button>
+      </form>
+      <p class="switch-link"><a onclick="showScreen('screen-signin')">Back to Sign In</a></p>
+    </div>
+  </section>
 
-        function setLoading(button, loading, loadingText = "Please wait...") {
-            if (!button) return;
-            if (loading) {
-                button.dataset.originalText = button.textContent;
-                button.textContent = loadingText;
-                button.disabled = true;
-                button.style.opacity = "0.7";
-                button.style.cursor = "not-allowed";
-            } else {
-                button.textContent = button.dataset.originalText || button.textContent;
-                button.disabled = false;
-                button.style.opacity = "1";
-                button.style.cursor = "pointer";
-            }
-        }
+  <!-- FORGOT PASSWORD STEP 2 (OTP) -->
+  <section class="screen" id="screen-forgot2">
+    <div class="glass-card">
+      <h1>Enter Code</h1>
+      <p class="tagline">Check your email for the reset code</p>
+      <div class="otp-boxes" id="otpBoxesForgot">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+        <input maxlength="1" type="text" inputmode="numeric">
+      </div>
+      <button class="btn-primary" id="btnForgot2"><span>Verify Code</span></button>
+    </div>
+  </section>
 
-        async function parseJsonSafe(response) {
-            try {
-                return await response.json();
-            } catch {
-                return {};
-            }
-        }
+  <!-- FORGOT PASSWORD STEP 3 (new password) -->
+  <section class="screen" id="screen-forgot3">
+    <div class="glass-card">
+      <h1>New Password</h1>
+      <form id="formForgot3">
+        <div class="field">
+          <input type="password" id="fp_newpass" required placeholder=" ">
+          <label>New Password</label>
+        </div>
+        <div class="field">
+          <input type="password" id="fp_confirmpass" required placeholder=" ">
+          <label>Confirm Password</label>
+        </div>
+        <div class="strength-bar"><div class="strength-fill" id="strengthFill2"></div></div>
+        <button type="submit" class="btn-primary" id="btnForgot3"><span>Update Password</span></button>
+      </form>
+    </div>
+  </section>
 
-        async function apiPost(url, payload) {
-            const response = await fetch(url, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
+  <!-- FORGOT SUCCESS -->
+  <section class="screen" id="screen-forgot-success">
+    <div class="glass-card center-content">
+      <div class="check-circle">✓</div>
+      <h1>Password Updated</h1>
+      <p class="tagline" id="successCountdown">Redirecting in 3...</p>
+    </div>
+  </section>
 
-            const data = await parseJsonSafe(response);
+  <!-- DASHBOARD -->
+  <section class="screen" id="screen-dashboard">
+    <div class="dash-wrap">
+      <nav class="glass-nav">
+        <div class="tab active" data-tab="profile">Profile</div>
+        <div class="tab" data-tab="security">Security</div>
+        <div class="tab" data-tab="links">Links</div>
+        <div class="tab-indicator" id="tabIndicator"></div>
+      </nav>
 
-            if (!response.ok) {
-                throw new Error(data.detail || "কিছু একটা ভুল হয়েছে।");
-            }
+      <div class="glass-card dash-card" id="tab-profile">
+        <div class="profile-header">
+          <div class="avatar">👤</div>
+          <div>
+            <h2 id="dashUsername">username</h2>
+            <p class="member-since" id="dashMemberSince"></p>
+          </div>
+        </div>
 
-            return data;
-        }
+        <div class="mini-card">
+          <label>Phone Number</label>
+          <input type="text" id="dashPhone" placeholder="+880...">
+        </div>
+        <div class="mini-card">
+          <label>Email <span class="badge-verified">verified</span></label>
+          <input type="text" id="dashEmail" disabled>
+        </div>
+        <div class="mini-card">
+          <label>Custom Code</label>
+          <input type="text" id="dashCode" placeholder="e.g. AHAD-001">
+        </div>
+      </div>
 
-        async function handleSignup(button) {
-            clearAllMessages();
+      <div class="glass-card dash-card hidden" id="tab-security">
+        <h2>Security</h2>
+        <p class="tagline">Change password and manage sessions</p>
+        <button class="btn-secondary" onclick="showScreen('screen-forgot1')">Change Password</button>
+        <button class="btn-danger" id="btnLogout">Log Out</button>
+      </div>
 
-            const username = document.getElementById("sign-user").value.trim();
-            const email = document.getElementById("sign-email").value.trim();
-            const password = document.getElementById("sign-pass").value.trim();
+      <div class="glass-card dash-card hidden" id="tab-links">
+        <h2>My Links</h2>
+        <div id="linksList"></div>
+        <button class="btn-secondary" id="btnAddLink">+ Add Link</button>
+      </div>
 
-            if (!username || !email || !password) {
-                setMessage("signup-msg", "সব ঘর পূরণ করুন।");
-                return;
-            }
+      <button class="btn-save hidden" id="btnSaveProfile">Save Changes</button>
+    </div>
+  </section>
 
-            setLoading(button, true, "সাইনআপ হচ্ছে...");
+</main>
 
-            try {
-                const data = await apiPost("/signup", { username, email, password });
+<!-- LOGOUT CONFIRM MODAL -->
+<div class="modal-overlay hidden" id="logoutModal">
+  <div class="glass-card modal-card">
+    <h2>Log out?</h2>
+    <p class="tagline">You'll need to sign in again.</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cancelLogout">Cancel</button>
+      <button class="btn-danger" id="confirmLogout">Log Out</button>
+    </div>
+  </div>
+</div>
 
-                document.getElementById("verify-user").value = username;
-                document.getElementById("login-user").value = username;
+<footer class="site-footer">© Ahad Co — All rights reserved</footer>
 
-                showBox("verify-box");
-                setMessage("verify-msg", data.message || "OTP পাঠানো হয়েছে।", "success");
-            } catch (err) {
-                setMessage("signup-msg", err.message || "সার্ভারে কানেক্ট করা যাচ্ছে না।");
-            } finally {
-                setLoading(button, false);
-            }
-        }
-
-        async function handleVerify(button) {
-            clearAllMessages();
-
-            const username = document.getElementById("verify-user").value.trim();
-            const otp = document.getElementById("verify-otp").value.trim();
-
-            if (!username || !otp) {
-                setMessage("verify-msg", "ইউজারনেম এবং OTP দিন।");
-                return;
-            }
-
-            setLoading(button, true, "ভেরিফাই হচ্ছে...");
-
-            try {
-                const data = await apiPost("/verify", { username, otp });
-
-                document.getElementById("login-user").value = username;
-
-                showBox("login-box");
-                setMessage("login-msg", data.message || "ভেরিফিকেশন সফল!", "success");
-            } catch (err) {
-                setMessage("verify-msg", err.message || "ভেরিফিকেশন ব্যর্থ হয়েছে।");
-            } finally {
-                setLoading(button, false);
-            }
-        }
-
-        async function handleResendOTP(button) {
-            clearAllMessages();
-
-            const username = document.getElementById("verify-user").value.trim();
-
-            if (!username) {
-                setMessage("verify-msg", "আগে ইউজারনেম লিখুন।");
-                return;
-            }
-
-            setLoading(button, true, "OTP পাঠানো হচ্ছে...");
-
-            try {
-                const data = await apiPost("/resend-otp", { username });
-                setMessage("verify-msg", data.message || "নতুন OTP পাঠানো হয়েছে।", "success");
-            } catch (err) {
-                setMessage("verify-msg", err.message || "OTP পাঠানো যায়নি।");
-            } finally {
-                setLoading(button, false);
-            }
-        }
-
-        async function handleLogin(button) {
-            clearAllMessages();
-
-            const username = document.getElementById("login-user").value.trim();
-            const password = document.getElementById("login-pass").value.trim();
-
-            if (!username || !password) {
-                setMessage("login-msg", "ইউজারনেম এবং পাসওয়ার্ড দিন।");
-                return;
-            }
-
-            setLoading(button, true, "লগইন হচ্ছে...");
-
-            try {
-                const data = await apiPost("/login", { username, password });
-
-                showBox("dashboard-box");
-                document.getElementById("welcome-text").textContent =
-                    `${data.username || username}, আপনি সফলভাবে লগইন করেছেন।`;
-            } catch (err) {
-                setMessage("login-msg", err.message || "লগইন ব্যর্থ হয়েছে।");
-            } finally {
-                setLoading(button, false);
-            }
-        }
-
-        function logout() {
-            document.getElementById("login-pass").value = "";
-            showBox("login-box");
-        }
-    </script>
+<script src="/static/script.js"></script>
 </body>
     </html>
