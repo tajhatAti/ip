@@ -177,7 +177,7 @@
   </div>
 </footer>
 
-<!-- AUTH SCREENS (Hidden initially) -->
+<!-- AUTH SCREENS -->
 <div class="auth-container hidden" id="screen-signup">
   <div class="auth-card">
     <button class="back-btn" onclick="showScreen('screen-landing')">← Back</button>
@@ -255,7 +255,7 @@
       <input maxlength="1" type="text" inputmode="numeric">
       <input maxlength="1" type="text" inputmode="numeric">
     </div>
-    <button class="btn-auth" id="btnVerify"><span>Verify Code</span></button>
+    <button class="btn-auth" id="btnVerify"><span>Verify & Continue</span></button>
     <p class="resend-row">
       <span id="resendTimer">Resend in 00:45</span>
       <a id="resendLink" class="resend-link">Resend Code</a>
@@ -331,68 +331,233 @@
   </div>
 </div>
 
-<!-- DASHBOARD -->
+<!-- ====================== DASHBOARD (COMPLETE) ====================== -->
 <div class="dashboard hidden" id="screen-dashboard">
+  <!-- Top Navigation -->
   <nav class="dash-nav">
     <div class="dash-brand">
       <div class="brand-logo">AC</div>
       <span>Ahad Co</span>
+    </div>
+    <div class="dash-tabs">
+      <button class="dash-tab active" data-tab="overview">📊 Overview</button>
+      <button class="dash-tab" data-tab="vault">🔐 Vault</button>
+      <button class="dash-tab" data-tab="notes">📝 Notes</button>
+      <button class="dash-tab" data-tab="bookmarks">🔖 Bookmarks</button>
+      <button class="dash-tab" data-tab="profile">👤 Profile</button>
     </div>
     <div class="dash-user">
       <span id="dashUsername">User</span>
       <button class="btn-logout" id="btnLogout">Logout</button>
     </div>
   </nav>
-  
-  <div class="dash-content">
-    <div class="dash-sidebar">
-      <div class="sidebar-menu">
-        <div class="menu-item active">📊 Dashboard</div>
-        <div class="menu-item">🔐 Security</div>
-        <div class="menu-item">📝 Notes</div>
-        <div class="menu-item">🔖 Bookmarks</div>
-        <div class="menu-item">⚙️ Settings</div>
-      </div>
-    </div>
+
+  <!-- Main Content Area -->
+  <div class="dash-main-content">
     
-    <div class="dash-main">
-      <h1>Welcome, <span id="dashUsername2">User</span>!</h1>
-      <p class="dash-subtitle">Your account is protected and secure</p>
+    <!-- OVERVIEW TAB -->
+    <div class="dash-tab-content active" id="tab-overview">
+      <div class="welcome-banner">
+        <h1>Welcome back, <span id="dashUsername2">User</span>! 👋</h1>
+        <p>Your data is secure and synced</p>
+      </div>
       
-      <div class="dash-cards">
-        <div class="dash-card">
-          <div class="card-icon">🔒</div>
-          <div class="card-info">
-            <h3>2FA Status</h3>
-            <p class="status-active">✓ Active</p>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">🔐</div>
+          <div class="stat-info">
+            <span class="stat-num" id="statVault">0</span>
+            <span class="stat-name">Saved Items</span>
           </div>
         </div>
-        <div class="dash-card">
-          <div class="card-icon">📧</div>
-          <div class="card-info">
-            <h3>Email</h3>
-            <p id="dashEmail">user@email.com</p>
+        <div class="stat-card">
+          <div class="stat-icon">📝</div>
+          <div class="stat-info">
+            <span class="stat-num" id="statNotes">0</span>
+            <span class="stat-name">Notes</span>
           </div>
         </div>
-        <div class="dash-card">
-          <div class="card-icon">📅</div>
-          <div class="card-info">
-            <h3>Member Since</h3>
-            <p id="dashMemberSince">2024</p>
+        <div class="stat-card">
+          <div class="stat-icon">🔖</div>
+          <div class="stat-info">
+            <span class="stat-num" id="statBookmarks">0</span>
+            <span class="stat-name">Bookmarks</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📅</div>
+          <div class="stat-info">
+            <span class="stat-num" id="statDays">0</span>
+            <span class="stat-name">Days Active</span>
           </div>
         </div>
       </div>
-      
-      <div class="dash-section">
-        <h2>Quick Actions</h2>
-        <div class="action-grid">
-          <button class="action-btn">🔄 Change Password</button>
-          <button class="action-btn">📱 Setup 2FA</button>
-          <button class="action-btn">📊 View Activity</button>
-          <button class="action-btn">📤 Export Data</button>
+
+      <div class="quick-actions">
+        <h2>⚡ Quick Actions</h2>
+        <div class="action-buttons">
+          <button class="action-btn-large" onclick="switchTab('vault')">
+            <span class="btn-icon">➕</span>
+            <span class="btn-text">Add to Vault</span>
+          </button>
+          <button class="action-btn-large" onclick="switchTab('notes')">
+            <span class="btn-icon">✨</span>
+            <span class="btn-text">New Note</span>
+          </button>
+          <button class="action-btn-large" onclick="switchTab('bookmarks')">
+            <span class="btn-icon">🌐</span>
+            <span class="btn-text">Add Bookmark</span>
+          </button>
+          <button class="action-btn-large" onclick="switchTab('profile')">
+            <span class="btn-icon">📱</span>
+            <span class="btn-text">Update Phone</span>
+          </button>
         </div>
       </div>
     </div>
+
+    <!-- VAULT TAB -->
+    <div class="dash-tab-content" id="tab-vault">
+      <div class="tab-header">
+        <h2>🔐 Secure Vault</h2>
+        <button class="btn-add-new" id="btnAddVault">➕ Add New</button>
+      </div>
+      
+      <!-- Vault Add Form -->
+      <div class="add-form hidden" id="vaultForm">
+        <div class="form-row-custom">
+          <select id="vaultType" class="input-select">
+            <option value="phone">📱 Phone</option>
+            <option value="email">📧 Email</option>
+            <option value="code">🔑 Code</option>
+            <option value="link">🔗 Link</option>
+            <option value="note">📝 Note</option>
+            <option value="password">🔐 Password</option>
+          </select>
+          <input type="text" id="vaultLabel" placeholder="Label (e.g., Bank Account)" class="input-text">
+        </div>
+        <textarea id="vaultValue" placeholder="Value / Content..." class="input-textarea"></textarea>
+        <div class="form-actions">
+          <button class="btn-save-form" onclick="saveVault()">💾 Save</button>
+          <button class="btn-cancel-form" onclick="hideVaultForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Vault List -->
+      <div class="vault-list" id="vaultList">
+        <div class="empty-state">
+          <div class="empty-icon">🔐</div>
+          <p>Your vault is empty</p>
+          <small>Click "Add New" to save your first item</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES TAB -->
+    <div class="dash-tab-content" id="tab-notes">
+      <div class="tab-header">
+        <h2>📝 Notes & Diary</h2>
+        <button class="btn-add-new" id="btnAddNote">➕ New Note</button>
+      </div>
+      
+      <!-- Note Add Form -->
+      <div class="add-form hidden" id="noteForm">
+        <input type="text" id="noteTitle" placeholder="Note Title" class="input-text">
+        <textarea id="noteContent" placeholder="Write your note here..." class="input-textarea tall"></textarea>
+        <div class="color-picker">
+          <span>Color:</span>
+          <button class="color-btn" data-color="#6366f1" style="background:#6366f1"></button>
+          <button class="color-btn" data-color="#22d3ee" style="background:#22d3ee"></button>
+          <button class="color-btn" data-color="#10b981" style="background:#10b981"></button>
+          <button class="color-btn" data-color="#f59e0b" style="background:#f59e0b"></button>
+          <button class="color-btn" data-color="#ef4444" style="background:#ef4444"></button>
+        </div>
+        <div class="form-actions">
+          <button class="btn-save-form" onclick="saveNote()">💾 Save Note</button>
+          <button class="btn-cancel-form" onclick="hideNoteForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Notes Grid -->
+      <div class="notes-grid" id="notesList">
+        <div class="empty-state">
+          <div class="empty-icon">📝</div>
+          <p>No notes yet</p>
+          <small>Create your first note</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOOKMARKS TAB -->
+    <div class="dash-tab-content" id="tab-bookmarks">
+      <div class="tab-header">
+        <h2>🔖 Bookmarks</h2>
+        <button class="btn-add-new" id="btnAddBookmark">➕ Add Bookmark</button>
+      </div>
+      
+      <!-- Bookmark Add Form -->
+      <div class="add-form hidden" id="bookmarkForm">
+        <input type="text" id="bookmarkTitle" placeholder="Website Name" class="input-text">
+        <input type="url" id="bookmarkUrl" placeholder="https://example.com" class="input-text">
+        <input type="text" id="bookmarkDesc" placeholder="Description (optional)" class="input-text">
+        <div class="form-actions">
+          <button class="btn-save-form" onclick="saveBookmark()">💾 Save Bookmark</button>
+          <button class="btn-cancel-form" onclick="hideBookmarkForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Bookmarks List -->
+      <div class="bookmarks-list" id="bookmarksList">
+        <div class="empty-state">
+          <div class="empty-icon">🔖</div>
+          <p>No bookmarks yet</p>
+          <small>Save your favorite links</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROFILE TAB -->
+    <div class="dash-tab-content" id="tab-profile">
+      <div class="tab-header">
+        <h2>👤 Profile Settings</h2>
+      </div>
+      
+      <div class="profile-grid">
+        <div class="profile-card">
+          <h3>📧 Account Info</h3>
+          <div class="profile-field">
+            <label>Username</label>
+            <input type="text" id="profileUsername" disabled class="input-disabled">
+          </div>
+          <div class="profile-field">
+            <label>Email</label>
+            <input type="email" id="profileEmail" class="input-text">
+          </div>
+          <div class="profile-field">
+            <label>Phone Number</label>
+            <input type="tel" id="profilePhone" placeholder="+880 1XXX XXXXXX" class="input-text">
+          </div>
+          <div class="profile-field">
+            <label>Custom Code</label>
+            <input type="text" id="profileCode" placeholder="AHAD-001" class="input-text">
+          </div>
+          <button class="btn-save-form" onclick="saveProfile()">💾 Save Changes</button>
+        </div>
+
+        <div class="profile-card">
+          <h3>🔐 Security</h3>
+          <button class="btn-security" onclick="showScreen('screen-forgot1')">🔄 Change Password</button>
+          <button class="btn-security" id="btn2FA">📱 Setup 2FA</button>
+          <button class="btn-security" onclick="exportData()">📤 Export My Data</button>
+        </div>
+
+        <div class="profile-card danger-zone">
+          <h3>⚠️ Danger Zone</h3>
+          <button class="btn-danger">🗑️ Delete Account</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
