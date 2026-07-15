@@ -3,230 +3,402 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ahad Co</title>
-<link rel="stylesheet" href="/static/style.css">
-<link rel="stylesheet" href="/static/enhanced.css">
+<title>Ahad Co - Secure Authentication</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/pro.css">
 </head>
 <body>
 
-<div class="bg-blobs">
-  <div class="blob blob1"></div>
-  <div class="blob blob2"></div>
-  <div class="blob blob3"></div>
-</div>
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <div class="brand-logo">AC</div>
+    <span class="brand-name">Ahad Co</span>
+  </div>
+  <div class="nav-links">
+    <a href="#" class="nav-link active">Home</a>
+    <a href="#" class="nav-link">Features</a>
+    <a href="#" class="nav-link">Pricing</a>
+    <a href="#" class="nav-link">Contact</a>
+  </div>
+  <div class="nav-actions">
+    <button class="btn-ghost" onclick="showScreen('screen-signin')">Sign In</button>
+    <button class="btn-primary-nav" onclick="showScreen('screen-signup')">Get Started</button>
+  </div>
+</nav>
 
-<div class="toast-container" id="toastContainer"></div>
-
-<header class="topbar">
-  <div class="logo"><span class="logo-dot"></span> Ahad Co</div>
-</header>
-
-<main class="stage">
-
-  <!-- SIGN UP -->
-  <section class="screen active" id="screen-signup">
-    <div class="glass-card">
-      <h1>Create Account</h1>
-      <p class="tagline">Secure. Simple. Yours.</p>
-      <form id="formSignup">
-        <div class="field">
-          <input type="text" id="su_username" required placeholder=" ">
-          <label>Username</label>
+<!-- HERO SECTION -->
+<section class="hero" id="screen-landing">
+  <div class="hero-content">
+    <div class="badge">🚀 New: 2FA Authentication Available</div>
+    <h1 class="hero-title">Secure Authentication<br><span class="gradient-text">Made Simple</span></h1>
+    <p class="hero-desc">Enterprise-grade security without the complexity. Protect your accounts with our modern 2FA system.</p>
+    <div class="hero-buttons">
+      <button class="btn-hero-primary" onclick="showScreen('screen-signup')">Start Free Trial</button>
+      <button class="btn-hero-secondary">Watch Demo ▶</button>
+    </div>
+    <div class="hero-stats">
+      <div class="stat">
+        <span class="stat-number">50K+</span>
+        <span class="stat-label">Active Users</span>
+      </div>
+      <div class="stat">
+        <span class="stat-number">99.9%</span>
+        <span class="stat-label">Uptime</span>
+      </div>
+      <div class="stat">
+        <span class="stat-number">24/7</span>
+        <span class="stat-label">Support</span>
+      </div>
+    </div>
+  </div>
+  <div class="hero-visual">
+    <div class="floating-card">
+      <div class="fc-header">
+        <div class="fc-dot red"></div>
+        <div class="fc-dot yellow"></div>
+        <div class="fc-dot green"></div>
+      </div>
+      <div class="fc-content">
+        <div class="fc-icon">🔐</div>
+        <h3>Welcome Back!</h3>
+        <p>Your account is protected</p>
+        <div class="fc-shield">
+          <span class="shield-icon">✓</span>
+          <span>2FA Enabled</span>
         </div>
-        <div class="field">
-          <input type="email" id="su_email" required placeholder=" ">
-          <label>Email</label>
-        </div>
-        <div class="field">
-          <input type="password" id="su_password" required placeholder=" ">
-          <label>Password</label>
-          <span class="eye" data-target="su_password">👁</span>
-        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES SECTION -->
+<section class="features">
+  <div class="section-header">
+    <h2>Why Choose <span class="gradient-text">Ahad Co?</span></h2>
+    <p>Everything you need to secure your digital life</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <h3>End-to-End Encryption</h3>
+      <p>Your data is encrypted and protected at all times</p>
+    </div>
+    <div class="feature-card featured">
+      <div class="feature-icon">📱</div>
+      <h3>2FA Authentication</h3>
+      <p>Extra layer of security with authenticator apps</p>
+      <span class="feature-badge">Popular</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Lightning Fast</h3>
+      <p>Optimized for speed and performance</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌙</div>
+      <h3>Dark Mode</h3>
+      <p>Easy on the eyes, day or night</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Activity Log</h3>
+      <p>Track all login attempts and changes</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔑</div>
+      <h3>Password Manager</h3>
+      <p>Generate and store strong passwords</p>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING SECTION -->
+<section class="pricing">
+  <div class="section-header">
+    <h2>Simple, Transparent <span class="gradient-text">Pricing</span></h2>
+    <p>Start free, upgrade when you need more</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="pricing-card">
+      <div class="plan-name">Free</div>
+      <div class="plan-price">$0<span>/month</span></div>
+      <ul class="plan-features">
+        <li>✓ 1 User</li>
+        <li>✓ Email Verification</li>
+        <li>✓ Password Reset</li>
+        <li>✓ Dark Mode</li>
+      </ul>
+      <button class="btn-plan" onclick="showScreen('screen-signup')">Get Started</button>
+    </div>
+    <div class="pricing-card popular">
+      <div class="popular-badge">Most Popular</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-price">$9<span>/month</span></div>
+      <ul class="plan-features">
+        <li>✓ Unlimited Users</li>
+        <li>✓ 2FA Authentication</li>
+        <li>✓ API Access</li>
+        <li>✓ Priority Support</li>
+        <li>✓ Advanced Analytics</li>
+      </ul>
+      <button class="btn-plan-primary" onclick="showScreen('screen-signup')">Start Trial</button>
+    </div>
+    <div class="pricing-card">
+      <div class="plan-name">Enterprise</div>
+      <div class="plan-price">$29<span>/month</span></div>
+      <ul class="plan-features">
+        <li>✓ Everything in Pro</li>
+        <li>✓ Custom Branding</li>
+        <li>✓ SSO Integration</li>
+        <li>✓ Dedicated Support</li>
+        <li>✓ SLA Guarantee</li>
+      </ul>
+      <button class="btn-plan" onclick="showScreen('screen-signup')">Contact Us</button>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-content">
+    <div class="footer-brand">
+      <div class="brand-logo">AC</div>
+      <span>Ahad Co</span>
+    </div>
+    <div class="footer-links">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Support</a>
+      <a href="#">Documentation</a>
+    </div>
+    <div class="footer-copy">© 2026 Ahad Co. All rights reserved.</div>
+  </div>
+</footer>
+
+<!-- AUTH SCREENS (Hidden initially) -->
+<div class="auth-container hidden" id="screen-signup">
+  <div class="auth-card">
+    <button class="back-btn" onclick="showScreen('screen-landing')">← Back</button>
+    <div class="auth-header">
+      <h2>Create Account</h2>
+      <p>Join thousands of users protecting their accounts</p>
+    </div>
+    <form id="formSignup" class="auth-form">
+      <div class="input-group">
+        <label>Username</label>
+        <input type="text" id="su_username" placeholder="johndoe" required>
+      </div>
+      <div class="input-group">
+        <label>Email</label>
+        <input type="email" id="su_email" placeholder="john@example.com" required>
+      </div>
+      <div class="input-group">
+        <label>Password</label>
+        <input type="password" id="su_password" placeholder="••••••••" required>
         <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
         <span class="strength-label" id="strengthLabel"></span>
-        <button type="submit" class="btn-primary" id="btnSignup"><span>Sign Up</span></button>
-      </form>
-      <p class="switch-link">Already have an account? <a onclick="showScreen('screen-signin')">Sign In</a></p>
-    </div>
-  </section>
-
-  <!-- OTP VERIFY (signup) -->
-  <section class="screen" id="screen-otp">
-    <div class="glass-card">
-      <h1>Verify Email</h1>
-      <p class="tagline" id="otpEmailNote">Enter the 6-digit code we sent you</p>
-      <div class="otp-boxes" id="otpBoxesSignup">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
       </div>
-      <button class="btn-primary" id="btnVerify"><span>Verify</span></button>
-      <p class="resend-row">
-        <span id="resendTimer">Resend in 00:45</span>
-        <a id="resendLink" class="resend-link disabled">Resend Code</a>
-      </p>
-    </div>
-  </section>
+      <button type="submit" class="btn-auth" id="btnSignup">
+        <span>Create Account</span>
+      </button>
+    </form>
+    <p class="auth-switch">Already have account? <a onclick="showScreen('screen-signin')">Sign In</a></p>
+  </div>
+</div>
 
-  <!-- SIGN IN -->
-  <section class="screen" id="screen-signin">
-    <div class="glass-card">
-      <h1>Welcome Back</h1>
-      <p class="tagline">Secure. Simple. Yours.</p>
-      <form id="formSignin">
-        <div class="field">
-          <input type="text" id="si_username" required placeholder=" ">
-          <label>Username or Email</label>
-        </div>
-        <div class="field">
-          <input type="password" id="si_password" required placeholder=" ">
-          <label>Password</label>
-          <span class="eye" data-target="si_password">👁</span>
-        </div>
-        <div class="row-between">
-          <label class="toggle">
-            <input type="checkbox" id="rememberMe">
-            <span class="slider"></span> Remember me
-          </label>
-          <a onclick="showScreen('screen-forgot1')" class="forgot-link">Forgot Password?</a>
-        </div>
-        <button type="submit" class="btn-primary" id="btnSignin"><span>Sign In</span></button>
-      </form>
-      <p class="switch-link">Don't have an account? <a onclick="showScreen('screen-signup')">Sign Up</a></p>
+<div class="auth-container hidden" id="screen-signin">
+  <div class="auth-card">
+    <button class="back-btn" onclick="showScreen('screen-landing')">← Back</button>
+    <div class="auth-header">
+      <h2>Welcome Back</h2>
+      <p>Sign in to your protected account</p>
     </div>
-  </section>
-
-  <!-- FORGOT PASSWORD STEP 1 -->
-  <section class="screen" id="screen-forgot1">
-    <div class="glass-card">
-      <h1>Reset Password</h1>
-      <p class="tagline">Enter your email to get a reset code</p>
-      <form id="formForgot1">
-        <div class="field">
-          <input type="email" id="fp_email" required placeholder=" ">
-          <label>Email</label>
-        </div>
-        <button type="submit" class="btn-primary" id="btnForgot1"><span>Send Code</span></button>
-      </form>
-      <p class="switch-link"><a onclick="showScreen('screen-signin')">Back to Sign In</a></p>
-    </div>
-  </section>
-
-  <!-- FORGOT PASSWORD STEP 2 (OTP) -->
-  <section class="screen" id="screen-forgot2">
-    <div class="glass-card">
-      <h1>Enter Code</h1>
-      <p class="tagline">Check your email for the reset code</p>
-      <div class="otp-boxes" id="otpBoxesForgot">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
-        <input maxlength="1" type="text" inputmode="numeric">
+    <form id="formSignin" class="auth-form">
+      <div class="input-group">
+        <label>Email or Username</label>
+        <input type="text" id="si_username" placeholder="john@example.com" required>
       </div>
-      <button class="btn-primary" id="btnForgot2"><span>Verify Code</span></button>
+      <div class="input-group">
+        <label>Password</label>
+        <input type="password" id="si_password" placeholder="••••••••" required>
+      </div>
+      <div class="form-row">
+        <label class="checkbox-label">
+          <input type="checkbox"> Remember me
+        </label>
+        <a onclick="showScreen('screen-forgot1')" class="forgot-link">Forgot password?</a>
+      </div>
+      <button type="submit" class="btn-auth" id="btnSignin">
+        <span>Sign In</span>
+      </button>
+    </form>
+    <p class="auth-switch">Don't have account? <a onclick="showScreen('screen-signup')">Sign Up</a></p>
+  </div>
+</div>
+
+<!-- OTP SCREEN -->
+<div class="auth-container hidden" id="screen-otp">
+  <div class="auth-card">
+    <button class="back-btn" onclick="showScreen('screen-signup')">← Back</button>
+    <div class="auth-header">
+      <div class="otp-icon">📧</div>
+      <h2>Verify Email</h2>
+      <p id="otpEmailNote">Enter the 6-digit code sent to your email</p>
     </div>
-  </section>
-
-  <!-- FORGOT PASSWORD STEP 3 (new password) -->
-  <section class="screen" id="screen-forgot3">
-    <div class="glass-card">
-      <h1>New Password</h1>
-      <form id="formForgot3">
-        <div class="field">
-          <input type="password" id="fp_newpass" required placeholder=" ">
-          <label>New Password</label>
-        </div>
-        <div class="field">
-          <input type="password" id="fp_confirmpass" required placeholder=" ">
-          <label>Confirm Password</label>
-        </div>
-        <div class="strength-bar"><div class="strength-fill" id="strengthFill2"></div></div>
-        <button type="submit" class="btn-primary" id="btnForgot3"><span>Update Password</span></button>
-      </form>
+    <div class="otp-boxes" id="otpBoxesSignup">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
     </div>
-  </section>
+    <button class="btn-auth" id="btnVerify"><span>Verify Code</span></button>
+    <p class="resend-row">
+      <span id="resendTimer">Resend in 00:45</span>
+      <a id="resendLink" class="resend-link">Resend Code</a>
+    </p>
+  </div>
+</div>
 
-  <!-- FORGOT SUCCESS -->
-  <section class="screen" id="screen-forgot-success">
-    <div class="glass-card center-content">
-      <div class="check-circle">✓</div>
-      <h1>Password Updated</h1>
-      <p class="tagline" id="successCountdown">Redirecting in 3...</p>
+<!-- FORGOT PASSWORD -->
+<div class="auth-container hidden" id="screen-forgot1">
+  <div class="auth-card">
+    <button class="back-btn" onclick="showScreen('screen-signin')">← Back</button>
+    <div class="auth-header">
+      <div class="otp-icon">🔑</div>
+      <h2>Reset Password</h2>
+      <p>We'll send you a reset code</p>
     </div>
-  </section>
+    <form id="formForgot1" class="auth-form">
+      <div class="input-group">
+        <label>Email</label>
+        <input type="email" id="fp_email" placeholder="john@example.com" required>
+      </div>
+      <button type="submit" class="btn-auth" id="btnForgot1"><span>Send Reset Code</span></button>
+    </form>
+  </div>
+</div>
 
-  <!-- DASHBOARD -->
-  <section class="screen" id="screen-dashboard">
-    <div class="dash-wrap">
-      <nav class="glass-nav">
-        <div class="tab active" data-tab="profile">Profile</div>
-        <div class="tab" data-tab="security">Security</div>
-        <div class="tab" data-tab="links">Links</div>
-        <div class="tab-indicator" id="tabIndicator"></div>
-      </nav>
+<div class="auth-container hidden" id="screen-forgot2">
+  <div class="auth-card">
+    <button class="back-btn" onclick="showScreen('screen-forgot1')">← Back</button>
+    <div class="auth-header">
+      <h2>Enter Code</h2>
+      <p>Check your email for the reset code</p>
+    </div>
+    <div class="otp-boxes" id="otpBoxesForgot">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" type="text" inputmode="numeric">
+    </div>
+    <button class="btn-auth" id="btnForgot2"><span>Verify Code</span></button>
+  </div>
+</div>
 
-      <div class="glass-card dash-card" id="tab-profile">
-        <div class="profile-header">
-          <div class="avatar">👤</div>
-          <div>
-            <h2 id="dashUsername">username</h2>
-            <p class="member-since" id="dashMemberSince"></p>
+<div class="auth-container hidden" id="screen-forgot3">
+  <div class="auth-card">
+    <button class="back-btn" onclick="showScreen('screen-forgot2')">← Back</button>
+    <div class="auth-header">
+      <h2>New Password</h2>
+      <p>Enter your new password</p>
+    </div>
+    <form id="formForgot3" class="auth-form">
+      <div class="input-group">
+        <label>New Password</label>
+        <input type="password" id="fp_newpass" placeholder="••••••••" required>
+      </div>
+      <div class="input-group">
+        <label>Confirm Password</label>
+        <input type="password" id="fp_confirmpass" placeholder="••••••••" required>
+      </div>
+      <button type="submit" class="btn-auth" id="btnForgot3"><span>Update Password</span></button>
+    </form>
+  </div>
+</div>
+
+<!-- SUCCESS SCREEN -->
+<div class="auth-container hidden" id="screen-forgot-success">
+  <div class="auth-card center">
+    <div class="success-icon">✓</div>
+    <h2>Password Updated!</h2>
+    <p>Redirecting in <span id="successCountdown">3</span>...</p>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="dashboard hidden" id="screen-dashboard">
+  <nav class="dash-nav">
+    <div class="dash-brand">
+      <div class="brand-logo">AC</div>
+      <span>Ahad Co</span>
+    </div>
+    <div class="dash-user">
+      <span id="dashUsername">User</span>
+      <button class="btn-logout" id="btnLogout">Logout</button>
+    </div>
+  </nav>
+  
+  <div class="dash-content">
+    <div class="dash-sidebar">
+      <div class="sidebar-menu">
+        <div class="menu-item active">📊 Dashboard</div>
+        <div class="menu-item">🔐 Security</div>
+        <div class="menu-item">📝 Notes</div>
+        <div class="menu-item">🔖 Bookmarks</div>
+        <div class="menu-item">⚙️ Settings</div>
+      </div>
+    </div>
+    
+    <div class="dash-main">
+      <h1>Welcome, <span id="dashUsername2">User</span>!</h1>
+      <p class="dash-subtitle">Your account is protected and secure</p>
+      
+      <div class="dash-cards">
+        <div class="dash-card">
+          <div class="card-icon">🔒</div>
+          <div class="card-info">
+            <h3>2FA Status</h3>
+            <p class="status-active">✓ Active</p>
           </div>
         </div>
-
-        <div class="mini-card">
-          <label>Phone Number</label>
-          <input type="text" id="dashPhone" placeholder="+880...">
+        <div class="dash-card">
+          <div class="card-icon">📧</div>
+          <div class="card-info">
+            <h3>Email</h3>
+            <p id="dashEmail">user@email.com</p>
+          </div>
         </div>
-        <div class="mini-card">
-          <label>Email <span class="badge-verified">verified</span></label>
-          <input type="text" id="dashEmail" disabled>
-        </div>
-        <div class="mini-card">
-          <label>Custom Code</label>
-          <input type="text" id="dashCode" placeholder="e.g. AHAD-001">
+        <div class="dash-card">
+          <div class="card-icon">📅</div>
+          <div class="card-info">
+            <h3>Member Since</h3>
+            <p id="dashMemberSince">2024</p>
+          </div>
         </div>
       </div>
-
-      <div class="glass-card dash-card hidden" id="tab-security">
-        <h2>Security</h2>
-        <p class="tagline">Change password and manage sessions</p>
-        <button class="btn-secondary" onclick="showScreen('screen-forgot1')">Change Password</button>
-        <button class="btn-danger" id="btnLogout">Log Out</button>
+      
+      <div class="dash-section">
+        <h2>Quick Actions</h2>
+        <div class="action-grid">
+          <button class="action-btn">🔄 Change Password</button>
+          <button class="action-btn">📱 Setup 2FA</button>
+          <button class="action-btn">📊 View Activity</button>
+          <button class="action-btn">📤 Export Data</button>
+        </div>
       </div>
-
-      <div class="glass-card dash-card hidden" id="tab-links">
-        <h2>My Links</h2>
-        <div id="linksList"></div>
-        <button class="btn-secondary" id="btnAddLink">+ Add Link</button>
-      </div>
-
-      <button class="btn-save hidden" id="btnSaveProfile">Save Changes</button>
-    </div>
-  </section>
-
-</main>
-
-<!-- LOGOUT CONFIRM MODAL -->
-<div class="modal-overlay hidden" id="logoutModal">
-  <div class="glass-card modal-card">
-    <h2>Log out?</h2>
-    <p class="tagline">You'll need to sign in again.</p>
-    <div class="modal-actions">
-      <button class="btn-secondary" id="cancelLogout">Cancel</button>
-      <button class="btn-danger" id="confirmLogout">Log Out</button>
     </div>
   </div>
 </div>
 
-<footer class="site-footer">© Ahad Co — All rights reserved</footer>
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
 
-<script src="/static/script.js"></script>
-<script src="/static/theme.js"></script>
+<script src="/static/pro.js"></script>
 </body>
-    </html>
+</html>
