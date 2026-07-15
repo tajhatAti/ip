@@ -5,6 +5,10 @@ import time
 import sqlite3
 import secrets
 import logging
+import pyotp
+import qrcode
+import io
+import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
@@ -178,6 +182,15 @@ class AccountDelete(BaseModel):
     password: str
 
 
+class TwoFactorSetup(BaseModel):
+    enable: bool
+
+
+class TwoFactorVerify(BaseModel):
+    code: str
+    temp_token: Optional[str] = None
+
+
 # ----------------------------
 # DB Helpers
 # ----------------------------
@@ -242,6 +255,32 @@ def init_db():
             value TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_2fa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            secret TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 0,
+            backup_codes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS login_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ip_address TEXT,
+            device_info TEXT,
+            location TEXT,
+            success INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     """)
@@ -816,5 +855,172 @@ def delete_account(payload: AccountDelete, authorization: Optional[str] = Header
         conn.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         conn.commit()
         return {"message": "Account deleted permanently."}
+    finally:
+        conn.close()
+
+
+# ----------------------------
+# Two-Factor Authentication (2FA)
+# ----------------------------
+@app.get("/2fa/status")
+def get_2fa_status(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_2fa WHERE user_id = ?", (user["id"],)).fetchone()
+        if not row:
+            return {"enabled": False, "backup_codes_count": 0}
+        return {
+            "enabled": bool(row["is_enabled"]),
+            "backup_codes_count": len(json.loads(row["backup_codes"] or "[]"))
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/2fa/setup")
+def setup_2fa(payload: TwoFactorSetup, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        current_time = now_utc_str()
+        
+        if payload.enable:
+            # Generate new TOTP secret
+            secret = pyotp.random_base32()
+            
+            # Generate backup codes
+            backup_codes = [secrets.token_hex(8) for _ in range(8)]
+            
+            # Store temporarily (not enabled yet)
+            conn.execute("""
+                INSERT OR REPLACE INTO user_2fa (user_id, secret, is_enabled, backup_codes, created_at, updated_at)
+                VALUES (?, ?, 0, ?, ?, ?)
+            """, (user["id"], secret, json.dumps(backup_codes), current_time, current_time))
+            conn.commit()
+            
+            # Generate QR code
+            totp = pyotp.TOTP(secret)
+            uri = totp.provisioning_uri(name=user["username"], issuer_name="Ahad Co")
+            
+            # Generate QR image
+            qr = qrcode.QRCode(version=1, box_size=10, border=4)
+            qr.add_data(uri)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            return {
+                "secret": secret,
+                "qr_code": f"data:image/png;base64,{qr_base64}",
+                "backup_codes": backup_codes,
+                "message": "Scan the QR code with your authenticator app"
+            }
+        else:
+            # Disable 2FA
+            conn.execute("DELETE FROM user_2fa WHERE user_id = ?", (user["id"],))
+            conn.commit()
+            return {"message": "2FA disabled successfully"}
+    finally:
+        conn.close()
+
+
+@app.post("/2fa/verify-setup")
+def verify_2fa_setup(payload: TwoFactorVerify, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_2fa WHERE user_id = ?", (user["id"],)).fetchone()
+        if not row or not row["secret"]:
+            raise HTTPException(status_code=400, detail="2FA setup not initiated")
+        
+        if row["is_enabled"]:
+            raise HTTPException(status_code=400, detail="2FA is already enabled")
+        
+        totp = pyotp.TOTP(row["secret"])
+        if not totp.verify(payload.code):
+            raise HTTPException(status_code=400, detail="Invalid verification code")
+        
+        # Enable 2FA
+        conn.execute("UPDATE user_2fa SET is_enabled=1, updated_at=? WHERE user_id=?", 
+                     (now_utc_str(), user["id"]))
+        conn.commit()
+        
+        return {"message": "2FA enabled successfully!"}
+    finally:
+        conn.close()
+
+
+@app.post("/2fa/verify-login")
+def verify_2fa_login(payload: TwoFactorVerify, authorization: Optional[str] = Header(None)):
+    """Verify 2FA code during login when 2FA is enabled"""
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_2fa WHERE user_id = ?", (user["id"],)).fetchone()
+        if not row or not row["is_enabled"]:
+            raise HTTPException(status_code=400, detail="2FA not enabled")
+        
+        # Check if it's a backup code
+        backup_codes = json.loads(row["backup_codes"] or "[]")
+        if payload.code in backup_codes:
+            # Remove used backup code
+            backup_codes.remove(payload.code)
+            conn.execute("UPDATE user_2fa SET backup_codes=? WHERE user_id=?", 
+                         (json.dumps(backup_codes), user["id"]))
+            conn.commit()
+            return {"message": "Backup code accepted", "backup_codes_remaining": len(backup_codes)}
+        
+        # Verify TOTP
+        totp = pyotp.TOTP(row["secret"])
+        if not totp.verify(payload.code):
+            raise HTTPException(status_code=400, detail="Invalid 2FA code")
+        
+        return {"message": "2FA verified successfully"}
+    finally:
+        conn.close()
+
+
+# ----------------------------
+# Login History
+# ----------------------------
+@app.get("/login-history")
+def get_login_history(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("""
+            SELECT ip_address, device_info, location, success, created_at 
+            FROM login_history 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT 20
+        """, (user["id"],)).fetchall()
+        return {"history": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+# ----------------------------
+# API Keys (for developers)
+# ----------------------------
+class APIKeyCreate(BaseModel):
+    name: str
+
+
+class APIKeyRevoke(BaseModel):
+    key_id: int
+
+
+@app.get("/api-keys")
+def list_api_keys(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        # For now, return empty - you'd add a api_keys table similarly
+        return {"keys": []}
     finally:
         conn.close()

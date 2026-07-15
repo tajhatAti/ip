@@ -1,0 +1,44 @@
+# render.yaml - Render Auto-Deploy Configuration
+# Deploy to: https://render.com
+
+services:
+  - type: web
+    name: ahad-co
+    runtime: python
+    region: singapore  # or frankfurt, oregon, ohio
+    plan: free  # or starter, professional
+    
+    # Build command
+    buildCommand: pip install -r requirements.txt
+    
+    # Start command
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    
+    # Environment variables (set these in Render Dashboard for security)
+    envVars:
+      - key: DB_PATH
+        value: /data/database.db
+      
+      - key: BREVO_API_KEY
+        sync: false  # Set in Render Dashboard
+      
+      - key: SENDER_EMAIL
+        sync: false  # Set in Render Dashboard
+      
+      - key: SENDER_NAME
+        value: Ahad Co
+      
+      - key: OTP_EXPIRY_MINUTES
+        value: "10"
+
+    # Persistent disk for database
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+
+# Scheduled cron job for database backup (optional)
+# cron:
+#   - name: "Daily Backup"
+#     schedule: "0 2 * * *"
+#     command: "cp /data/database.db /data/backup-$(date +%Y%m%d).db"

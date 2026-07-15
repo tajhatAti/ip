@@ -3,12 +3,7 @@ uvicorn[standard]
 bcrypt
 pydantic
 requests
-fastapi
-uvicorn[standard]
-bcrypt
 email-validator
-fastapi
-uvicorn[standard]
-bcrypt
-email-validator
-requests
+pyotp
+qrcode[pil]
+gunicorn
