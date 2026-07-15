@@ -1,55 +1,178 @@
 import os
-import re
-import smtplib
+import sys
+import random
 import sqlite3
-import secrets
-import logging
-from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import bcrypt
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
-# ----------------------------
-# Logging / Debug
-# ----------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-logger = logging.getLogger("otp-auth-app")
+# --------------------------------------------
+# Database Path (Render Disk)
+# --------------------------------------------
+DB_DIR = "/data"
 
-# ----------------------------
-# App
-# ----------------------------
-app = FastAPI(title="OTP Login System")
-
-# ----------------------------
-# Paths / Config
-# ----------------------------
-BASE_DIR = Path(__file__).resolve().parent
-INDEX_FILE = BASE_DIR / "index.html"
-
-DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "database.db")))
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "10"))
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT_TLS = int(os.getenv("SMTP_PORT_TLS", "587"))
-SMTP_PORT_SSL = int(os.getenv("SMTP_PORT_SSL", "465"))
-
-USERNAME_REGEX = re.compile(r"^[A-Za-z0-9_.-]{3,30}$")
+if os.path.exists(DB_DIR) and os.path.isdir(DB_DIR):
+    DB_PATH = os.path.join(DB_DIR, "database.db")
+    print(f"[DB] Using persistent disk: {DB_PATH}", flush=True)
+else:
+    DB_PATH = "database.db"
+    print(f"[DB] Using local database: {DB_PATH}", flush=True)
 
 
-# ----------------------------
+# --------------------------------------------
+# Initialize Database
+# --------------------------------------------
+def init_db():
+    print("[DB] Initializing database...", flush=True)
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                otp TEXT NOT NULL,
+                is_verified INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        conn.commit()
+        conn.close()
+
+        print("[DB] Database initialized successfully!", flush=True)
+
+    except Exception as e:
+        print(f"[DB] Error: {str(e)}", flush=True)
+        sys.exit(1)
+
+
+# --------------------------------------------
+# Password Hashing
+# --------------------------------------------
+def hash_password(password: str) -> str:
+    pwd_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except Exception:
+        return False
+
+
+# --------------------------------------------
+# Send OTP Email (Brevo API)
+# --------------------------------------------
+def send_otp_email(receiver_email: str, otp: str):
+    """
+    Sends OTP email using Brevo API
+    Your own email will be the sender
+    """
+    api_key = os.getenv("BREVO_API_KEY")
+
+    if not api_key:
+        print("[BREVO] BREVO_API_KEY is missing!", flush=True)
+        raise HTTPException(
+            status_code=500,
+            detail="API Key পাওয়া যায়নি।"
+        )
+
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
+
+    # এখানে তোমার Confirm করা ইমেইলটি দিবে
+    sender_email = "trulove551@gmail.com"
+    sender_name = "Login System"
+
+    data = {
+        "sender": {
+            "name": sender_name,
+            "email": sender_email,
+        },
+        "to": [
+            {
+                "email": receiver_email,
+            }
+        ],
+        "subject": "OTP Verification Code",
+        "htmlContent": f"""
+        <div style="font-family: Arial, sans-serif; padding: 40px; background-color: #f4f4f9;">
+            <div style="max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; text-align: center;">
+                <h2 style="color: #667eea;">অ্যাকাউন্ট ভেরিফিকেশন</h2>
+                
+                <p style="color: #333; font-size: 16px; margin: 30px 0;">
+                    আপনার OTP কোড হলো:
+                </p>
+                
+                <div style="display: inline-block; padding: 25px 60px; background: #f8f9fa; border: 2px dashed #667eea; border-radius: 10px; font-size: 42px; font-weight: bold; color: #667eea; letter-spacing: 15px;">
+                    {otp}
+                </div>
+                
+                <p style="color: #666; margin-top: 30px;">
+                    এই কোডটি ১০ মিনিটের জন্য কার্যকর।
+                </p>
+            </div>
+        </div>
+        """,
+    }
+
+    try:
+        response = requests.post(
+            url,
+            json=data,
+            headers=headers,
+            timeout=30,
+        )
+
+        print(f"[BREVO] Status Code: {response.status_code}", flush=True)
+
+        if response.status_code == 201 or response.status_code == 202:
+            print("[BREVO] Email sent successfully!", flush=True)
+            return
+
+        else:
+            print(f"[BREVO] Error: {response.text}", flush=True)
+            raise HTTPException(
+                status_code=500,
+                detail="ইমেইল পাঠানো যায়নি।"
+            )
+
+    except Exception as e:
+        print(f"[BREVO] Error: {str(e)}", flush=True)
+        raise HTTPException(
+            status_code=500,
+            detail="ইমেইল পাঠানো যায়নি।"
+        )
+
+
+# --------------------------------------------
 # Models
-# ----------------------------
+# --------------------------------------------
 class UserSignup(BaseModel):
     username: str
-    email: EmailStr
+    email: str
     password: str
 
 
@@ -63,430 +186,137 @@ class UserLogin(BaseModel):
     password: str
 
 
-class ResendOTP(BaseModel):
-    username: str
+# --------------------------------------------
+# Lifespan
+# --------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("[APP] Starting...", flush=True)
+    print(f"[APP] BREVO_API_KEY exists: {'Yes' if os.getenv('BREVO_API_KEY') else 'No'}", flush=True)
+    
+    init_db()
+    
+    yield
 
 
-# ----------------------------
-# Helpers
-# ----------------------------
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+# --------------------------------------------
+# FastAPI App
+# --------------------------------------------
+app = FastAPI(lifespan=lifespan)
 
 
-def now_utc_str() -> str:
-    return now_utc().isoformat()
-
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            password TEXT NOT NULL,
-            otp TEXT,
-            otp_created_at TEXT,
-            is_verified INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-    logger.info("Database initialized at: %s", DB_PATH)
-
-
-init_db()
-
-
-def validate_username(username: str) -> str:
-    username = username.strip()
-    if not USERNAME_REGEX.fullmatch(username):
-        raise HTTPException(
-            status_code=400,
-            detail="ইউজারনেম ৩-৩০ অক্ষরের হতে হবে এবং শুধু letters, numbers, _, ., - ব্যবহার করা যাবে।"
-        )
-    return username
-
-
-def validate_password(password: str) -> str:
-    password = password.strip()
-    if len(password) < 6:
-        raise HTTPException(
-            status_code=400,
-            detail="পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।"
-        )
-    return password
-
-
-def generate_otp() -> str:
-    return f"{secrets.randbelow(1_000_000):06d}"
-
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8")
-        )
-    except Exception:
-        return False
-
-
-def send_otp_email(receiver_email: str, otp: str, username: str):
-    sender_email = os.getenv("SENDER_EMAIL", "").strip()
-    email_pass = os.getenv("EMAIL_PASS", "").strip()
-
-    logger.info("=== EMAIL DEBUG START ===")
-    logger.info("SMTP_HOST: %s", SMTP_HOST)
-    logger.info("Receiver: %s", receiver_email)
-    logger.info("Sender configured: %s", bool(sender_email))
-    logger.info("EMAIL_PASS configured: %s", bool(email_pass))
-    logger.info("EMAIL_PASS length: %s", len(email_pass) if email_pass else 0)
-
-    if not sender_email:
-        logger.error("SENDER_EMAIL environment variable is missing.")
-        raise HTTPException(
-            status_code=500,
-            detail="সার্ভারে email sender configure করা নেই।"
-        )
-
-    if not email_pass:
-        logger.error("EMAIL_PASS environment variable is missing.")
-        raise HTTPException(
-            status_code=500,
-            detail="সার্ভারে EMAIL_PASS configure করা নেই।"
-        )
-
-    msg = EmailMessage()
-    msg["Subject"] = "Your Verification OTP"
-    msg["From"] = sender_email
-    msg["To"] = receiver_email
-    msg.set_content(
-        f"""Hello {username},
-
-Your OTP code is: {otp}
-
-This code will expire in {OTP_EXPIRY_MINUTES} minutes.
-
-If you did not request this account, please ignore this email.
-
-Thanks."""
-    )
-
-    error_587 = None
-
-    # Try TLS 587 first
-    try:
-        logger.info("Trying SMTP via Port %s (TLS)...", SMTP_PORT_TLS)
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT_TLS, timeout=20) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(sender_email, email_pass)
-            server.send_message(msg)
-        logger.info("Email sent successfully via Port %s", SMTP_PORT_TLS)
-        logger.info("=== EMAIL DEBUG SUCCESS ===")
-        return
-    except Exception as e:
-        error_587 = e
-        logger.exception("Port %s failed.", SMTP_PORT_TLS)
-
-    # Fallback SSL 465
-    try:
-        logger.info("Trying SMTP via Port %s (SSL)...", SMTP_PORT_SSL)
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT_SSL, timeout=20) as server:
-            server.login(sender_email, email_pass)
-            server.send_message(msg)
-        logger.info("Email sent successfully via Port %s", SMTP_PORT_SSL)
-        logger.info("=== EMAIL DEBUG SUCCESS ===")
-        return
-    except Exception as e:
-        logger.exception("Port %s failed.", SMTP_PORT_SSL)
-        logger.error("Both SMTP methods failed. 587 error: %s", str(error_587))
-        logger.error("465 error: %s", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="OTP email পাঠানো যায়নি। Gmail App Password, sender email, বা SMTP settings চেক করুন।"
-        )
-
-
-# ----------------------------
-# Routes
-# ----------------------------
-@app.get("/", include_in_schema=False)
-def read_index():
-    if not INDEX_FILE.exists():
-        raise HTTPException(status_code=404, detail="index.html file পাওয়া যায়নি।")
-    return FileResponse(INDEX_FILE)
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "db_path": str(DB_PATH),
-        "otp_expiry_minutes": OTP_EXPIRY_MINUTES
-    }
+@app.get("/")
+def index():
+    return FileResponse("index.html")
 
 
 @app.post("/signup")
 def signup(user: UserSignup):
-    username = validate_username(user.username)
-    email = str(user.email).strip().lower()
-    password = validate_password(user.password)
+    username = user.username.strip()
+    email = user.email.strip().lower()
+    password = user.password
 
-    otp = generate_otp()
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="ইউজারনেম ৩ অক্ষরের বেশি হতে হবে")
+
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="পাসওয়ার্ড ৬ অক্ষরের বেশি হতে হবে")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM users WHERE LOWER(username)=? OR LOWER(email)=?",
+        (username.lower(), email),
+    )
+
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(
+            status_code=400, detail="ইউজারনেম বা ইমেইল আগেই আছে"
+        )
+
+    otp = str(random.randint(100000, 999999))
+
     hashed_pw = hash_password(password)
-    current_time = now_utc_str()
 
-    logger.info("Signup requested | username=%s | email=%s", username, email)
+    cursor.execute(
+        "INSERT INTO users (username, email, password, otp, is_verified) VALUES (?, ?, ?, ?, 0)",
+        (username, email, hashed_pw, otp),
+    )
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    inserted_user_id = None
+    conn.commit()
+    conn.close()
 
-    try:
-        existing = cursor.execute(
-            "SELECT id, is_verified FROM users WHERE username = ? OR email = ?",
-            (username, email)
-        ).fetchone()
+    # OTP পাঠাও
+    send_otp_email(email, otp)
 
-        if existing:
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail="এই ইউজারনেম বা ইমেইল আগে থেকেই আছে।"
-            )
-
-        cursor.execute("""
-            INSERT INTO users (
-                username, email, password, otp, otp_created_at,
-                is_verified, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-        """, (
-            username,
-            email,
-            hashed_pw,
-            otp,
-            current_time,
-            current_time,
-            current_time
-        ))
-        conn.commit()
-        inserted_user_id = cursor.lastrowid
-
-        logger.info(
-            "User inserted in DB | id=%s | username=%s | otp=%s",
-            inserted_user_id,
-            username,
-            otp
-        )
-
-        send_otp_email(email, otp, username)
-
-        logger.info("Signup success | username=%s", username)
-        return {
-            "message": "সাইনআপ সফল! আপনার ইমেইলে OTP পাঠানো হয়েছে।"
-        }
-
-    except HTTPException:
-        if inserted_user_id:
-            cursor.execute("DELETE FROM users WHERE id = ?", (inserted_user_id,))
-            conn.commit()
-            logger.warning("Rolled back signup because email send failed | username=%s", username)
-        raise
-
-    except sqlite3.IntegrityError:
-        logger.exception("SQLite integrity error during signup.")
-        raise HTTPException(
-            status_code=400,
-            detail="এই ইউজারনেম বা ইমেইল আগে থেকেই আছে।"
-        )
-
-    except Exception:
-        logger.exception("Unexpected signup error.")
-        if inserted_user_id:
-            cursor.execute("DELETE FROM users WHERE id = ?", (inserted_user_id,))
-            conn.commit()
-        raise HTTPException(
-            status_code=500,
-            detail="সার্ভারে সমস্যা হয়েছে। পরে আবার চেষ্টা করুন।"
-        )
-
-    finally:
-        conn.close()
-
-
-@app.post("/resend-otp")
-def resend_otp(payload: ResendOTP):
-    username = validate_username(payload.username)
-    logger.info("Resend OTP requested | username=%s", username)
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        row = cursor.execute(
-            "SELECT id, email, is_verified FROM users WHERE username = ?",
-            (username,)
-        ).fetchone()
-
-        if not row:
-            raise HTTPException(status_code=404, detail="ইউজারনেম পাওয়া যায়নি।")
-
-        if row["is_verified"] == 1:
-            return {"message": "অ্যাকাউন্ট ইতিমধ্যেই ভেরিফাইড।"}
-
-        new_otp = generate_otp()
-        current_time = now_utc_str()
-
-        cursor.execute("""
-            UPDATE users
-            SET otp = ?, otp_created_at = ?, updated_at = ?
-            WHERE id = ?
-        """, (
-            new_otp,
-            current_time,
-            current_time,
-            row["id"]
-        ))
-        conn.commit()
-
-        logger.info("New OTP generated | username=%s | otp=%s", username, new_otp)
-
-        send_otp_email(row["email"], new_otp, username)
-
-        return {"message": "নতুন OTP আপনার ইমেইলে পাঠানো হয়েছে।"}
-
-    finally:
-        conn.close()
+    return {"message": "সাইনআপ সফল! ইমেইলে OTP পাঠানো হয়েছে"}
 
 
 @app.post("/verify")
-def verify_otp(user: UserVerify):
-    username = validate_username(user.username)
+def verify(user: UserVerify):
+    username = user.username.strip()
     otp = user.otp.strip()
 
-    if not otp.isdigit() or len(otp) != 6:
-        raise HTTPException(status_code=400, detail="OTP অবশ্যই ৬ সংখ্যার হতে হবে।")
-
-    logger.info("Verify requested | username=%s | otp=%s", username, otp)
-
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    try:
-        row = cursor.execute("""
-            SELECT id, otp, otp_created_at, is_verified
-            FROM users
-            WHERE username = ?
-        """, (username,)).fetchone()
+    cursor.execute(
+        "SELECT otp, is_verified FROM users WHERE LOWER(username)=?",
+        (username.lower(),),
+    )
 
-        if not row:
-            raise HTTPException(status_code=404, detail="ইউজারনেম পাওয়া যায়নি।")
+    row = cursor.fetchone()
 
-        if row["is_verified"] == 1:
-            return {"message": "অ্যাকাউন্ট ইতিমধ্যেই ভেরিফাইড।"}
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="ইউজার পাওয়া যায়নি")
 
-        db_otp = row["otp"]
-        otp_created_at = row["otp_created_at"]
+    db_otp, is_verified = row
 
-        if not db_otp or not otp_created_at:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP পাওয়া যায়নি। নতুন OTP রিকোয়েস্ট করুন।"
-            )
+    if is_verified == 1:
+        conn.close()
+        return {"message": "ইতিমধ্যে ভেরিফাই করা হয়েছে"}
 
-        created_time = datetime.fromisoformat(otp_created_at)
-        expires_at = created_time + timedelta(minutes=OTP_EXPIRY_MINUTES)
-
-        if now_utc() > expires_at:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP মেয়াদ শেষ হয়ে গেছে। নতুন OTP নিন।"
-            )
-
-        if db_otp != otp:
-            raise HTTPException(status_code=400, detail="ভুল OTP কোড!")
-
-        current_time = now_utc_str()
-
-        cursor.execute("""
-            UPDATE users
-            SET is_verified = 1,
-                otp = NULL,
-                otp_created_at = NULL,
-                updated_at = ?
-            WHERE id = ?
-        """, (current_time, row["id"]))
+    if db_otp == otp:
+        cursor.execute(
+            "UPDATE users SET is_verified=1 WHERE LOWER(username)=?",
+            (username.lower(),),
+        )
         conn.commit()
-
-        logger.info("Account verified | username=%s", username)
-
+        conn.close()
         return {"message": "ভেরিফিকেশন সফল!"}
 
-    finally:
-        conn.close()
+    conn.close()
+    raise HTTPException(status_code=400, detail="ভুল OTP!")
 
 
 @app.post("/login")
 def login(user: UserLogin):
-    username = validate_username(user.username)
+    username = user.username.strip()
     password = user.password
 
-    logger.info("Login requested | username=%s", username)
-
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    try:
-        row = cursor.execute("""
-            SELECT username, password, is_verified
-            FROM users
-            WHERE username = ?
-        """, (username,)).fetchone()
+    cursor.execute(
+        "SELECT password, is_verified FROM users WHERE LOWER(username)=?",
+        (username.lower(),),
+    )
 
-        if not row:
-            raise HTTPException(
-                status_code=400,
-                detail="ভুল ইউজারনেম বা পাসওয়ার্ড।"
-            )
+    row = cursor.fetchone()
+    conn.close()
 
-        if not verify_password(password, row["password"]):
-            raise HTTPException(
-                status_code=400,
-                detail="ভুল ইউজারনেম বা পাসওয়ার্ড।"
-            )
+    if not row:
+        raise HTTPException(status_code=400, detail="ইউজারনেম বা পাসওয়ার্ড ভুল")
 
-        if row["is_verified"] == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="অ্যাকাউন্ট ভেরিফাই করা হয়নি।"
-            )
+    hashed_pw, is_verified = row
 
-        logger.info("Login success | username=%s", username)
+    if not verify_password(password, hashed_pw):
+        raise HTTPException(status_code=400, detail="ইউজারনেম বা পাসওয়ার্ড ভুল")
 
-        return {
-            "message": "লগইন সফল!",
-            "username": row["username"]
-        }
+    if is_verified == 0:
+        raise HTTPException(status_code=400, detail="ভেরিফাই করা হয়নি")
 
-    finally:
-        conn.close()
+    return {"message": "লগইন সফল!", "username": username}
