@@ -7,3 +7,8 @@ fastapi
 uvicorn[standard]
 bcrypt
 email-validator
+fastapi
+uvicorn[standard]
+bcrypt
+email-validator
+requests
