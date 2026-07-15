@@ -1,411 +1,300 @@
 <!DOCTYPE html>
 <html lang="bn">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OTP Login System</title>
+    <title>Login System</title>
     <style>
-        * { box-sizing: border-box; }
-        body {
+        * {
             margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #eef2ff, #f8fafc);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
-            align-items: flex-start;
-            padding: 30px 15px;
-            color: #1f2937;
+            align-items: center;
+            padding: 20px;
         }
 
         .container {
             width: 100%;
-            max-width: 420px;
+            max-width: 450px;
         }
 
-        .card {
-            background: #ffffff;
-            border-radius: 16px;
-            padding: 24px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            margin-bottom: 18px;
-        }
-
-        h1, h2 {
-            margin-top: 0;
+        .box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            width: 100%;
             text-align: center;
         }
 
-        h1 {
+        .box h2 {
+            color: #333;
+            margin-bottom: 25px;
             font-size: 26px;
-            margin-bottom: 10px;
-        }
-
-        p.top-note {
-            text-align: center;
-            margin-top: 0;
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        label {
-            display: block;
-            margin-top: 12px;
-            margin-bottom: 6px;
-            font-size: 14px;
-            font-weight: 600;
         }
 
         input {
             width: 100%;
-            padding: 12px 14px;
-            border-radius: 10px;
-            border: 1px solid #d1d5db;
-            outline: none;
-            font-size: 15px;
-        }
-
-        input:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+            padding: 12px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
         }
 
         button {
             width: 100%;
+            padding: 12px;
+            margin-top: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
             border: none;
-            border-radius: 10px;
-            padding: 12px 14px;
-            font-size: 15px;
-            font-weight: 700;
+            border-radius: 6px;
             cursor: pointer;
-            margin-top: 14px;
+            font-size: 18px;
+            font-weight: bold;
         }
 
-        .btn-primary {
-            background: #2563eb;
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            background: #1d4ed8;
-        }
-
-        .btn-secondary {
-            background: #e5e7eb;
-            color: #111827;
-        }
-
-        .btn-secondary:hover {
-            background: #d1d5db;
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
         }
 
         .message {
-            margin-top: 12px;
-            padding: 10px 12px;
-            border-radius: 10px;
-            font-size: 14px;
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 6px;
             display: none;
-            text-align: center;
+            text-align: left;
         }
 
-        .message.error {
+        .error {
             display: block;
-            background: #fee2e2;
-            color: #991b1b;
+            background: #fff5f5;
+            color: #c53030;
+            border: 1px solid #fed7d7;
         }
 
-        .message.success {
+        .success {
             display: block;
-            background: #dcfce7;
-            color: #166534;
+            background: #f0fff4;
+            color: #2f855a;
+            border: 1px solid #c6f6d5;
+        }
+
+        .info {
+            display: block;
+            background: #ebf8ff;
+            color: #2c5282;
+            border: 1px solid #bee3f8;
         }
 
         .hidden {
-            display: none;
+            display: none !important;
         }
 
-        .switch-links {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-top: 8px;
-        }
-
-        .switch-links button {
-            width: auto;
-            margin-top: 0;
-            padding: 8px 12px;
-            font-size: 13px;
-            border-radius: 999px;
-        }
-
-        .success-box {
-            text-align: center;
-        }
-
-        .success-box h2 {
-            color: #15803d;
-        }
-
-        .small {
-            font-size: 13px;
-            color: #6b7280;
-            text-align: center;
-            margin-top: 10px;
+        .link {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-top: 20px;
+            display: inline-block;
         }
     </style>
 </head>
+
 <body>
+
     <div class="container">
-        <div class="card">
-            <h1>🔐 OTP Login System</h1>
-            <p class="top-note">Sign up → Email OTP → Verify → Login</p>
+        <div id="signup-box" class="box">
+            <h2>সাইনআপ করুন</h2>
 
-            <div class="switch-links">
-                <button class="btn-secondary" onclick="showBox('signup-box')">Sign Up</button>
-                <button class="btn-secondary" onclick="showBox('verify-box')">Verify OTP</button>
-                <button class="btn-secondary" onclick="showBox('login-box')">Login</button>
-            </div>
-        </div>
+            <input type="text" id="username" placeholder="ইউজারনেম (৩ অক্ষরের বেশি)">
+            <input type="email" id="email" placeholder="ইমেইল">
+            <input type="password" id="password" placeholder="পাসওয়ার্ড (৬ অক্ষরের বেশি)">
 
-        <!-- SIGNUP -->
-        <div id="signup-box" class="card">
-            <h2>নতুন অ্যাকাউন্ট তৈরি</h2>
+            <button onclick="signup()">সাইনআপ</button>
 
-            <label for="sign-user">ইউজারনেম</label>
-            <input type="text" id="sign-user" placeholder="যেমন: Ahad67" autocomplete="username">
-
-            <label for="sign-email">ইমেইল</label>
-            <input type="email" id="sign-email" placeholder="আপনার ইমেইল" autocomplete="email">
-
-            <label for="sign-pass">পাসওয়ার্ড</label>
-            <input type="password" id="sign-pass" placeholder="কমপক্ষে ৬ অক্ষর" autocomplete="new-password">
-
-            <button class="btn-primary" onclick="handleSignup(this)">সাইনআপ করুন</button>
             <div id="signup-msg" class="message"></div>
+
+            <p class="link" onclick="showLogin()">ইতিমধ্যে অ্যাকাউন্ট আছে? লগইন করুন</p>
         </div>
 
-        <!-- VERIFY -->
-        <div id="verify-box" class="card hidden">
-            <h2>OTP ভেরিফাই করুন</h2>
+        <div id="verify-box" class="box hidden">
+            <h2>OTP যাচাই</h2>
 
-            <label for="verify-user">ইউজারনেম</label>
-            <input type="text" id="verify-user" placeholder="আপনার ইউজারনেম">
+            <p>আপনার ইমেইলে ৬ ডিজিটের কোড পাঠানো হয়েছে</p>
 
-            <label for="verify-otp">৬ সংখ্যার OTP</label>
-            <input type="text" id="verify-otp" placeholder="যেমন: 123456" maxlength="6" inputmode="numeric">
+            <input type="text" id="otp" placeholder="৬ ডিজিটের কোড" maxlength="6">
 
-            <button class="btn-primary" onclick="handleVerify(this)">ভেরিফাই করুন</button>
-            <button class="btn-secondary" onclick="handleResendOTP(this)">আবার OTP পাঠান</button>
+            <button onclick="verify()">ভেরিফাই</button>
 
             <div id="verify-msg" class="message"></div>
-            <div class="small">ইমেইল না পেলে Spam folder-ও চেক করুন।</div>
+
+            <p class="link" onclick="showSignup()">পিছনে যান</p>
         </div>
 
-        <!-- LOGIN -->
-        <div id="login-box" class="card hidden">
-            <h2>লগইন করুন</h2>
+        <div id="login-box" class="box hidden">
+            <h2>লগইন</h2>
 
-            <label for="login-user">ইউজারনেম</label>
-            <input type="text" id="login-user" placeholder="আপনার ইউজারনেম" autocomplete="username">
+            <input type="text" id="login-user" placeholder="ইউজারনেম">
+            <input type="password" id="login-pass" placeholder="পাসওয়ার্ড">
 
-            <label for="login-pass">পাসওয়ার্ড</label>
-            <input type="password" id="login-pass" placeholder="আপনার পাসওয়ার্ড" autocomplete="current-password">
+            <button onclick="login()">লগইন</button>
 
-            <button class="btn-primary" onclick="handleLogin(this)">লগইন</button>
             <div id="login-msg" class="message"></div>
+
+            <p class="link" onclick="showSignup()">নতুন অ্যাকাউন্ট তৈরি করুন</p>
         </div>
 
-        <!-- DASHBOARD -->
-        <div id="dashboard-box" class="card hidden">
-            <div class="success-box">
-                <h2>🎉 লগইন সফল হয়েছে!</h2>
-                <p id="welcome-text">আপনি এখন সিস্টেমে লগইন করেছেন।</p>
-                <button class="btn-secondary" onclick="logout()">Logout</button>
-            </div>
+        <div id="dashboard-box" class="box hidden">
+            <h2 style="color: green">লগইন সফল হয়েছে!</h2>
+            <p id="welcome"></p>
+
+            <button style="background: #e53e3e;" onclick="logout()">লগআউট</button>
         </div>
     </div>
 
     <script>
-        let currentUsername = "";
+        let currentUser = "";
 
-        function showBox(id) {
-            const boxes = ["signup-box", "verify-box", "login-box", "dashboard-box"];
-            boxes.forEach(boxId => {
-                document.getElementById(boxId).classList.add("hidden");
+        function showSignup() {
+            hideAll();
+            document.getElementById("signup-box").classList.remove("hidden");
+        }
+
+        function showVerify() {
+            hideAll();
+            document.getElementById("verify-box").classList.remove("hidden");
+        }
+
+        function showLogin() {
+            hideAll();
+            document.getElementById("login-box").classList.remove("hidden");
+        }
+
+        function showDashboard() {
+            hideAll();
+            document.getElementById("dashboard-box").classList.remove("hidden");
+            document.getElementById("welcome").innerText = "স্বাগতম " + currentUser + "!";
+        }
+
+        function hideAll() {
+            document.querySelectorAll(".box").forEach(b => b.classList.add("hidden"));
+            document.querySelectorAll(".message").forEach(m => {
+                m.className = "message";
+                m.innerText = "";
             });
-            document.getElementById(id).classList.remove("hidden");
-            clearAllMessages();
         }
 
-        function clearAllMessages() {
-            ["signup-msg", "verify-msg", "login-msg"].forEach(id => {
-                const el = document.getElementById(id);
-                el.className = "message";
-                el.textContent = "";
-            });
-        }
+        async function signup() {
+            const username = document.getElementById("username").value;
+            const email = document.getElementById("email").value;
+            const password = document.getElementById("password").value;
+            const msg = document.getElementById("signup-msg");
 
-        function setMessage(id, text, type = "error") {
-            const el = document.getElementById(id);
-            el.textContent = text;
-            el.className = `message ${type}`;
-        }
-
-        function setLoading(button, loading, loadingText = "Please wait...") {
-            if (!button) return;
-            if (loading) {
-                button.dataset.originalText = button.textContent;
-                button.textContent = loadingText;
-                button.disabled = true;
-                button.style.opacity = "0.7";
-                button.style.cursor = "not-allowed";
-            } else {
-                button.textContent = button.dataset.originalText || button.textContent;
-                button.disabled = false;
-                button.style.opacity = "1";
-                button.style.cursor = "pointer";
-            }
-        }
-
-        async function parseJsonSafe(response) {
-            try {
-                return await response.json();
-            } catch {
-                return {};
-            }
-        }
-
-        async function apiPost(url, payload) {
-            const response = await fetch(url, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await parseJsonSafe(response);
-
-            if (!response.ok) {
-                throw new Error(data.detail || "কিছু একটা ভুল হয়েছে।");
-            }
-
-            return data;
-        }
-
-        async function handleSignup(button) {
-            clearAllMessages();
-
-            const username = document.getElementById("sign-user").value.trim();
-            const email = document.getElementById("sign-email").value.trim();
-            const password = document.getElementById("sign-pass").value.trim();
-
-            if (!username || !email || !password) {
-                setMessage("signup-msg", "সব ঘর পূরণ করুন।");
-                return;
-            }
-
-            setLoading(button, true, "সাইনআপ হচ্ছে...");
+            msg.className = "message info";
+            msg.innerText = "অপেক্ষা করুন...";
 
             try {
-                const data = await apiPost("/signup", { username, email, password });
+                const res = await fetch("/signup", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, email, password })
+                });
 
-                currentUsername = username;
-                document.getElementById("verify-user").value = username;
-                document.getElementById("login-user").value = username;
+                const data = await res.json();
 
-                showBox("verify-box");
-                setMessage("verify-msg", data.message || "OTP পাঠানো হয়েছে।", "success");
-            } catch (err) {
-                setMessage("signup-msg", err.message || "সার্ভারে কানেক্ট করা যাচ্ছে না।");
-            } finally {
-                setLoading(button, false);
+                if (res.ok) {
+                    currentUser = username;
+                    msg.className = "message success";
+                    msg.innerText = data.message;
+
+                    setTimeout(() => showVerify(), 1500);
+                } else {
+                    msg.className = "message error";
+                    msg.innerText = data.detail;
+                }
+            } catch (e) {
+                msg.className = "message error";
+                msg.innerText = "সার্ভার সংযোগে সমস্যা";
             }
         }
 
-        async function handleVerify(button) {
-            clearAllMessages();
+        async function verify() {
+            const otp = document.getElementById("otp").value;
+            const msg = document.getElementById("verify-msg");
 
-            const username = document.getElementById("verify-user").value.trim();
-            const otp = document.getElementById("verify-otp").value.trim();
-
-            if (!username || !otp) {
-                setMessage("verify-msg", "ইউজারনেম এবং OTP দিন।");
-                return;
-            }
-
-            setLoading(button, true, "ভেরিফাই হচ্ছে...");
+            msg.className = "message info";
+            msg.innerText = "অপেক্ষা করুন...";
 
             try {
-                const data = await apiPost("/verify", { username, otp });
+                const res = await fetch("/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: currentUser, otp })
+                });
 
-                currentUsername = username;
-                document.getElementById("login-user").value = username;
+                const data = await res.json();
 
-                showBox("login-box");
-                setMessage("login-msg", data.message || "ভেরিফিকেশন সফল!", "success");
-            } catch (err) {
-                setMessage("verify-msg", err.message || "ভেরিফিকেশন ব্যর্থ হয়েছে।");
-            } finally {
-                setLoading(button, false);
+                if (res.ok) {
+                    msg.className = "message success";
+                    msg.innerText = data.message;
+
+                    setTimeout(() => showLogin(), 1500);
+                } else {
+                    msg.className = "message error";
+                    msg.innerText = data.detail;
+                }
+            } catch (e) {
+                msg.className = "message error";
+                msg.innerText = "সমস্যা হয়েছে";
             }
         }
 
-        async function handleResendOTP(button) {
-            clearAllMessages();
-
-            const username = document.getElementById("verify-user").value.trim();
-
-            if (!username) {
-                setMessage("verify-msg", "আগে ইউজারনেম লিখুন।");
-                return;
-            }
-
-            setLoading(button, true, "OTP পাঠানো হচ্ছে...");
+        async function login() {
+            const username = document.getElementById("login-user").value;
+            const password = document.getElementById("login-pass").value;
+            const msg = document.getElementById("login-msg");
 
             try {
-                const data = await apiPost("/resend-otp", { username });
-                setMessage("verify-msg", data.message || "নতুন OTP পাঠানো হয়েছে।", "success");
-            } catch (err) {
-                setMessage("verify-msg", err.message || "OTP পাঠানো যায়নি।");
-            } finally {
-                setLoading(button, false);
-            }
-        }
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
+                });
 
-        async function handleLogin(button) {
-            clearAllMessages();
+                const data = await res.json();
 
-            const username = document.getElementById("login-user").value.trim();
-            const password = document.getElementById("login-pass").value.trim();
-
-            if (!username || !password) {
-                setMessage("login-msg", "ইউজারনেম এবং পাসওয়ার্ড দিন।");
-                return;
-            }
-
-            setLoading(button, true, "লগইন হচ্ছে...");
-
-            try {
-                const data = await apiPost("/login", { username, password });
-
-                showBox("dashboard-box");
-                document.getElementById("welcome-text").textContent =
-                    `${data.username || username}, আপনি সফলভাবে লগইন করেছেন।`;
-            } catch (err) {
-                setMessage("login-msg", err.message || "লগইন ব্যর্থ হয়েছে।");
-            } finally {
-                setLoading(button, false);
+                if (res.ok) {
+                    currentUser = data.username;
+                    showDashboard();
+                } else {
+                    msg.className = "message error";
+                    msg.innerText = data.detail;
+                }
+            } catch (e) {
+                msg.className = "message error";
+                msg.innerText = "সমস্যা হয়েছে";
             }
         }
 
         function logout() {
-            currentUsername = "";
-            document.getElementById("login-pass").value = "";
-            showBox("login-box");
+            currentUser = "";
+            showSignup();
         }
+
+        showSignup();
     </script>
 </body>
-                    </html>
+
+</html>
