@@ -66,8 +66,54 @@ docker run -p 8000:8000 \
 | `BREVO_API_KEY` | Brevo/Sendinblue API key for emails | Yes |
 | `SENDER_EMAIL` | Email address to send from | Yes |
 | `SENDER_NAME` | Sender name (default: "Ahad Co") | No |
-| `DB_PATH` | Path to SQLite database | No |
+| `DATABASE_URL` | PostgreSQL connection string (Supabase). If set → **permanent PostgreSQL storage**; if unset → local SQLite | No |
+| `DB_PATH` | Path to SQLite database (only used when `DATABASE_URL` is unset) | No |
+| `PG_SSLMODE` | PostgreSQL SSL mode (default: `prefer`) | No |
 | `OTP_EXPIRY_MINUTES` | OTP expiry time (default: 10) | No |
+
+## Database: SQLite vs PostgreSQL (Supabase)
+
+The app supports **two** database backends and picks one automatically:
+
+* **PostgreSQL (Supabase)** — used when `DATABASE_URL` is set. Your data is
+  stored permanently in Supabase and survives every redeploy. **Recommended for
+  production.**
+* **SQLite** — used when `DATABASE_URL` is unset. A single file at `DB_PATH`.
+  Great for local development (zero setup), but data does not survive container
+  redeploy unless you mount a persistent disk.
+
+> 💡 The code uses the same query syntax for both engines; the `database.py`
+> layer transparently handles placeholder style (`?` → `%s`), `lastrowid`
+> (via `RETURNING id`), `SERIAL`/`CITEXT`, and upserts (`ON CONFLICT`).
+
+### Switch to Supabase (permanent data, free, no credit card)
+
+1. Sign up at [supabase.com](https://supabase.com) and create a **free** project.
+2. Open **Project Settings → Database → Connection string** and copy the
+   **Session pooler** URL (port `5432`). Replace `[YOUR-PASSWORD]` with your
+   database password:
+   ```
+   postgresql://postgres.xxxx:YOUR_PASSWORD@aws-0-region.pooler.supabase.com:5432/postgres
+   ```
+3. Set it as your `DATABASE_URL` environment variable (in `.env` locally, or the
+   Render/Render dashboard in production).
+4. Restart the app. On startup it auto-creates all tables (incl. the `citext`
+   extension for case-insensitive usernames/emails).
+
+**Bring your existing SQLite data over** — run the included migration script:
+
+```bash
+# 1. Make sure DATABASE_URL points at Supabase
+export DATABASE_URL='postgresql://postgres.xxxx:YOUR_PASSWORD@aws-0-region.pooler.supabase.com:5432/postgres'
+export DB_PATH='./database.db'   # your existing local file
+
+# 2. Create the schema in Supabase, then copy everything
+python migrate_to_supabase.py --init-schema --force
+```
+
+The script preserves all user ids, sessions, vault entries, notes, bookmarks,
+2FA settings, etc., and advances each table's sequence so nothing collides. It
+runs in a single transaction and rolls back on any error, so it is safe to re-run.
 
 ## Deploy to Render
 
@@ -161,12 +207,15 @@ sudo systemctl start ahad-co
 
 ## Database Schema
 
-The app uses SQLite with these tables:
-- `users` - User accounts
+The app works with **SQLite** (local dev) or **PostgreSQL / Supabase** (permanent
+storage). The same tables are created either way:
+- `users` - User accounts (case-insensitive username/email via `CITEXT`/`NOCASE`)
 - `sessions` - Active sessions
 - `vault_entries` - User data vault
 - `user_2fa` - 2FA settings
 - `login_history` - Login tracking
+- `user_notes`, `user_bookmarks`, `user_categories`, `user_preferences`,
+  `api_keys`, `activity_log`, `notifications`
 
 ## License
 

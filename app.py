@@ -2,7 +2,6 @@ import os
 import re
 import json
 import time
-import sqlite3
 import secrets
 import logging
 import pyotp
@@ -22,6 +21,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 
+# Database layer (supports SQLite for local dev and PostgreSQL/Supabase for prod).
+# The engine is chosen automatically via the DATABASE_URL env var.
+from database import (
+    get_db_connection,
+    init_db,
+    DIALECT,
+    IntegrityError as DBIntegrityError,
+)
+
 # ----------------------------
 # Logging
 # ----------------------------
@@ -34,9 +42,6 @@ logger = logging.getLogger("ahad-co-app")
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_FILE = BASE_DIR / "index.html"
 STATIC_DIR = BASE_DIR / "static"
-
-DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "database.db")))
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "10"))
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
@@ -202,198 +207,12 @@ def now_utc_str() -> str:
     return now_utc().isoformat()
 
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            password TEXT NOT NULL,
-            otp TEXT,
-            otp_created_at TEXT,
-            is_verified INTEGER NOT NULL DEFAULT 0,
-            reset_otp TEXT,
-            reset_otp_created_at TEXT,
-            reset_verified INTEGER NOT NULL DEFAULT 0,
-            role TEXT NOT NULL DEFAULT 'user',
-            phone TEXT,
-            custom_code TEXT,
-            links TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-
-    # Ensure role column exists if upgrading an existing DB
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
-    except sqlite3.OperationalError:
-        pass
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            token TEXT NOT NULL UNIQUE,
-            device_info TEXT,
-            ip_address TEXT,
-            created_at TEXT NOT NULL,
-            last_seen TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS vault_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            label TEXT NOT NULL,
-            value TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_2fa (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL UNIQUE,
-            secret TEXT,
-            is_enabled INTEGER NOT NULL DEFAULT 0,
-            backup_codes TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS login_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            ip_address TEXT,
-            device_info TEXT,
-            location TEXT,
-            success INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # User preferences/settings
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_preferences (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL UNIQUE,
-            theme TEXT DEFAULT 'dark',
-            language TEXT DEFAULT 'en',
-            timezone TEXT DEFAULT 'UTC',
-            notifications_enabled INTEGER DEFAULT 1,
-            email_notifications INTEGER DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # User notes/diary
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            color TEXT DEFAULT '#7C6CF6',
-            pinned INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # Bookmarks
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_bookmarks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            url TEXT NOT NULL,
-            description TEXT,
-            category TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # Categories/Tags
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            icon TEXT DEFAULT '📁',
-            color TEXT DEFAULT '#7C6CF6',
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # API Keys
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS api_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            key_hash TEXT NOT NULL,
-            last_used TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # Activity/Audit Log
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS activity_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            action TEXT NOT NULL,
-            details TEXT,
-            ip_address TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    # Notifications
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS notifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            title TEXT NOT NULL,
-            message TEXT NOT NULL,
-            is_read INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-    logger.info("Database initialized at: %s", DB_PATH)
+# ----------------------------
+# Schema initialisation
+# ----------------------------
+# get_db_connection() and init_db() are imported from database.py (see top of
+# file). They transparently support both SQLite (local dev) and PostgreSQL
+# (Supabase / managed Postgres) via the DATABASE_URL env var.
 
 
 init_db()
@@ -549,6 +368,7 @@ def read_index():
 def health():
     return {
         "status": "ok",
+        "database": DIALECT,
         "brevo_api_key_set": bool(os.getenv("BREVO_API_KEY", "").strip()),
         "sender_email_set": bool(os.getenv("SENDER_EMAIL", "").strip()),
     }
@@ -596,7 +416,7 @@ def signup(user: UserSignup, request: Request):
             cursor.execute("DELETE FROM users WHERE id = ?", (inserted_user_id,))
             conn.commit()
         raise
-    except sqlite3.IntegrityError:
+    except DBIntegrityError:
         raise HTTPException(status_code=400, detail="Username or email is already taken.")
     finally:
         conn.close()
@@ -1010,10 +830,21 @@ def setup_2fa(payload: TwoFactorSetup, authorization: Optional[str] = Header(Non
             backup_codes = [secrets.token_hex(8) for _ in range(8)]
             
             # Store temporarily (not enabled yet)
-            conn.execute("""
-                INSERT OR REPLACE INTO user_2fa (user_id, secret, is_enabled, backup_codes, created_at, updated_at)
-                VALUES (?, ?, 0, ?, ?, ?)
-            """, (user["id"], secret, json.dumps(backup_codes), current_time, current_time))
+            if DIALECT == "postgres":
+                conn.execute("""
+                    INSERT INTO user_2fa (user_id, secret, is_enabled, backup_codes, created_at, updated_at)
+                    VALUES (?, ?, 0, ?, ?, ?)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        secret = EXCLUDED.secret,
+                        is_enabled = 0,
+                        backup_codes = EXCLUDED.backup_codes,
+                        updated_at = EXCLUDED.updated_at
+                """, (user["id"], secret, json.dumps(backup_codes), current_time, current_time))
+            else:
+                conn.execute("""
+                    INSERT OR REPLACE INTO user_2fa (user_id, secret, is_enabled, backup_codes, created_at, updated_at)
+                    VALUES (?, ?, 0, ?, ?, ?)
+                """, (user["id"], secret, json.dumps(backup_codes), current_time, current_time))
             conn.commit()
             
             # Generate QR code

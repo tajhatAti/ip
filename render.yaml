@@ -2,6 +2,14 @@
 # ==============================================
 # এই ফাইল Render.com এ auto-deploy সেটআপ করে
 # ==============================================
+#
+# 📌 PERMANENT DATA with Supabase (PostgreSQL free tier):
+#    Create a free Supabase project, copy its "Connection string" (Session pooler,
+#    port 5432), and add DATABASE_URL as an environment variable in the Render
+#    dashboard. When DATABASE_URL is set, the app uses PostgreSQL and data is
+#    permanent — no persistent disk needed.
+#
+#    (If DATABASE_URL is left unset, the app falls back to a SQLite file on disk.)
 
 services:
   - type: web
@@ -9,42 +17,50 @@ services:
     runtime: python
     region: singapore
     plan: free
-    
+
     # Auto deploy from main branch
     autoDeploy: true
-    
+
     # Build settings
     buildCommand: |
       pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
-    
+
     # Environment variables (Production এ Render Dashboard এ set করুন)
     envVars:
+      - key: DATABASE_URL
+        # ⚠️ REQUIRED for permanent data.
+        # Supabase Dashboard -> Project Settings -> Database -> Connection string
+        # Example: postgresql://postgres.xxxx:PASSWORD@aws-0-region.pooler.supabase.com:5432/postgres
+        # Leave unset to use local SQLite instead (data lost on redeploy).
+        sync: false
+
       - key: DB_PATH
+        # Only used when DATABASE_URL is unset (SQLite fallback)
         value: /data/database.db
-      
+
+      - key: PG_SSLMODE
+        value: prefer
+
       - key: BREVO_API_KEY
         # ⚠️ Render Dashboard > Environment > Add Environment Variable
-        # Name: BREVO_API_KEY
-        # Value: আপনার Brevo API Key
         sync: false
-      
+
       - key: SENDER_EMAIL
         # ⚠️ Render Dashboard > Environment > Add Environment Variable
-        # Name: SENDER_EMAIL
-        # Value: noreply@yourdomain.com
         sync: false
-      
+
       - key: SENDER_NAME
         value: Ahad Co
-      
+
       - key: OTP_EXPIRY_MINUTES
         value: "10"
-      
+
       - key: PYTHON_VERSION
         value: "3.11"
 
-    # Persistent disk for database
+    # Persistent disk — only needed if you use the SQLite fallback (DATABASE_URL
+    # unset). With Supabase/PostgreSQL you can safely remove this block.
     disk:
       name: ahad-data
       mountPath: /data

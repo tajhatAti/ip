@@ -7,3 +7,6 @@ email-validator
 pyotp
 qrcode[pil]
 gunicorn
+# PostgreSQL driver (Supabase / managed Postgres). Only loaded when DATABASE_URL
+# is set; without it the app falls back to SQLite (no extra setup needed locally).
+psycopg2-binary
