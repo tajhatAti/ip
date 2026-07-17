@@ -209,6 +209,20 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+/* ---------------- PREMIUM EMOJI HELPER ----------------
+   Wrap an emoji in a Telegram-Premium-style animated span.
+   anim: "premium" | "secure" | "fire" | "ice" | "gold" | "teal" | "float" |
+          "wiggle" | "pop" | "glow" | "rainbow" | "spin"  (default "premium")
+   ep("🔥")                       -> full premium (sparkle+glow+float+pop)
+   ep("🔐", "secure")             -> secure glow
+   ep("⭐", "gold")               -> gold sparkle
+   ep("💎", "ice")                -> ice/teal glow
+*/
+function ep(emoji, anim) {
+  const cls = anim ? ("ep ep-" + anim) : "ep ep-premium";
+  return '<span class="' + cls + '">' + (emoji || "") + "</span>";
+}
+
 /* ---------------- PASSWORD STRENGTH ---------------- */
 function checkStrength(password, fillEl, labelEl) {
   let score = 0;
@@ -523,14 +537,14 @@ async function loadVault() {
     const data = await api("/vault", "GET", null, true);
     const list = document.getElementById("vaultList");
     if (!data.entries || data.entries.length === 0) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔐</div><p>Your vault is empty</p><small>Click "Add New" to save your first item</small></div>`;
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("🔐","secure")}</div><p>Your vault is empty</p><small>Click "Add New" to save your first item</small></div>`;
       return;
     }
     const icons = { phone: "📱", email: "📧", code: "🔑", link: "🔗", note: "📝", password: "🔐", secret_file: "📁", file: "📁" };
     list.innerHTML = data.entries.map(item => `
       <div class="vault-item" data-id="${item.id}">
         <div class="vault-info">
-          <div class="vault-icon">${icons[item.type] || "📄"}</div>
+          <div class="vault-icon">${ep(icons[item.type] || "📄", item.type === "password" ? "secure" : "premium")}</div>
           <div class="vault-details">
             <h4>${escapeHtml(item.label)}</h4>
             <p>${escapeHtml(item.value)}</p>
@@ -608,7 +622,7 @@ async function loadNotes() {
     const data = await api("/notes", "GET", null, true);
     const list = document.getElementById("notesList");
     if (!data.notes || data.notes.length === 0) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-icon">📝</div><p>No notes yet</p><small>Create your first note</small></div>`;
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("📝")}</div><p>No notes yet</p><small>Create your first note</small></div>`;
       const sn = document.getElementById("statNotes"); if (sn) sn.textContent = 0;
       return;
     }
@@ -694,14 +708,14 @@ async function loadBookmarks() {
     const data = await api("/bookmarks", "GET", null, true);
     const list = document.getElementById("bookmarksList");
     if (!data.bookmarks || data.bookmarks.length === 0) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔖</div><p>No bookmarks yet</p><small>Save your favorite links</small></div>`;
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("🔖")}</div><p>No bookmarks yet</p><small>Save your favorite links</small></div>`;
       const sb = document.getElementById("statBookmarks"); if (sb) sb.textContent = 0;
       return;
     }
     list.innerHTML = data.bookmarks.map(bm => `
       <div class="bookmark-item">
         <div class="bookmark-info">
-          <div class="bookmark-icon">🌐</div>
+          <div class="bookmark-icon">${ep("🌐","teal")}</div>
           <div class="bookmark-details">
             <h4>${escapeHtml(bm.title)}</h4>
             <a href="${escapeHtml(bm.url)}" target="_blank" rel="noopener">${escapeHtml(bm.url)}</a>
@@ -799,7 +813,7 @@ async function loadCards() {
   try {
     const data = await api("/cards", "GET", null, true);
     if (!data.cards || !data.cards.length) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-icon">💳</div><p>No cards saved</p><small>Click “Add card” to store a payment card</small></div>`;
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("💳","fire")}</div><p>No cards saved</p><small>Click “Add card” to store a payment card</small></div>`;
       return;
     }
     list.innerHTML = data.cards.map(c => {
@@ -894,7 +908,7 @@ async function loadTasks() {
   try {
     const data = await api("/tasks", "GET", null, true);
     if (!data.tasks || !data.tasks.length) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><p>No tasks yet</p><small>Add your first task above</small></div>`;
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("✅","gold")}</div><p>No tasks yet</p><small>Add your first task above</small></div>`;
       return;
     }
     list.innerHTML = data.tasks.map(t => `
@@ -965,11 +979,11 @@ async function loadIdentities() {
   if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
   try {
     const data = await api("/identities", "GET", null, true);
-    if (!data.identities || !data.identities.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🪪</div><p>No identities saved</p><small>Add a passport, licence or ID</small></div>`; return; }
+    if (!data.identities || !data.identities.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("🪪")}</div><p>No identities saved</p><small>Add a passport, licence or ID</small></div>`; return; }
     const icons = { passport: "🛂", national_id: "🪪", license: "🚗", address: "🏠", tax: "🧾", other: "📄" };
     list.innerHTML = data.identities.map(it => `
       <div class="vault-item">
-        <div class="vault-info"><div class="vault-icon">${icons[it.type] || "📄"}</div>
+        <div class="vault-info"><div class="vault-icon">${ep(icons[it.type] || "📄","secure")}</div>
           <div class="vault-details"><h4>${escapeHtml(it.label)}</h4><p>${_fmtIdentityFields(it.fields)}</p></div></div>
         <div class="vault-actions">
           <button class="vault-btn delete" onclick="deleteIdentity(${it.id})">🗑️</button>
@@ -1002,10 +1016,10 @@ async function loadContacts() {
   if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
   try {
     const data = await api("/contacts", "GET", null, true);
-    if (!data.contacts || !data.contacts.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><p>No contacts yet</p><small>Add people you want to keep close</small></div>`; return; }
+    if (!data.contacts || !data.contacts.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("👥")}</div><p>No contacts yet</p><small>Add people you want to keep close</small></div>`; return; }
     list.innerHTML = data.contacts.map(c => `
       <div class="vault-item">
-        <div class="vault-info"><div class="vault-icon">${(c.name||"?").charAt(0).toUpperCase()}</div>
+        <div class="vault-info"><div class="vault-icon">${ep((c.name||"?").charAt(0).toUpperCase(),"fire")}</div>
           <div class="vault-details"><h4>${escapeHtml(c.name)}</h4>
             <p>${c.email ? "✉️ " + escapeHtml(c.email) + " " : ""}${c.phone ? "📞 " + escapeHtml(c.phone) : ""}${c.company ? " · " + escapeHtml(c.company) : ""}</p></div></div>
         <div class="vault-actions">
@@ -1038,10 +1052,10 @@ async function loadWifi() {
   if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
   try {
     const data = await api("/wifi", "GET", null, true);
-    if (!data.wifi || !data.wifi.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">📶</div><p>No WiFi networks saved</p><small>Add a network and generate a QR to share</small></div>`; return; }
+    if (!data.wifi || !data.wifi.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("📶","teal")}</div><p>No WiFi networks saved</p><small>Add a network and generate a QR to share</small></div>`; return; }
     list.innerHTML = data.wifi.map(w => `
       <div class="vault-item">
-        <div class="vault-info"><div class="vault-icon">📶</div>
+        <div class="vault-info"><div class="vault-icon">${ep("📶","teal")}</div>
           <div class="vault-details"><h4>${escapeHtml(w.label)} · ${escapeHtml(w.ssid)}</h4>
             <p>${w.password ? "🔑 " + escapeHtml(w.password) : "Open network"}${w.location ? " · 📍 " + escapeHtml(w.location) : ""}</p></div></div>
         <div class="vault-actions">
@@ -1087,10 +1101,10 @@ async function loadServers() {
   if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
   try {
     const data = await api("/servers", "GET", null, true);
-    if (!data.servers || !data.servers.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🖥️</div><p>No servers saved</p><small>Store SSH / host credentials</small></div>`; return; }
+    if (!data.servers || !data.servers.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("🖥️")}</div><p>No servers saved</p><small>Store SSH / host credentials</small></div>`; return; }
     list.innerHTML = data.servers.map(s => `
       <div class="vault-item">
-        <div class="vault-info"><div class="vault-icon">🖥️</div>
+        <div class="vault-info"><div class="vault-icon">${ep("🖥️")}</div>
           <div class="vault-details"><h4>${escapeHtml(s.name)}</h4>
             <p>${escapeHtml(s.username || "user")}@${escapeHtml(s.host)}:${s.port || 22}</p></div></div>
         <div class="vault-actions">
@@ -1123,10 +1137,10 @@ async function loadRecovery() {
   if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
   try {
     const data = await api("/recovery", "GET", null, true);
-    if (!data.recovery || !data.recovery.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🌱</div><p>No recovery phrases saved</p><small>Store crypto seed phrases securely</small></div>`; return; }
+    if (!data.recovery || !data.recovery.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("🌱","teal")}</div><p>No recovery phrases saved</p><small>Store crypto seed phrases securely</small></div>`; return; }
     list.innerHTML = data.recovery.map(r => `
       <div class="vault-item">
-        <div class="vault-info"><div class="vault-icon">🌱</div>
+        <div class="vault-info"><div class="vault-icon">${ep("🌱","teal")}</div>
           <div class="vault-details"><h4>${escapeHtml(r.label)}</h4>
             <p class="recovery-hidden mono" id="rec-${r.id}">•••• •••• •••• (${r.word_count} words)</p></div></div>
         <div class="vault-actions">
@@ -1279,7 +1293,7 @@ async function loadSnippets() {
     const snips = data.snippets || [];
     const count = document.getElementById("snippetCount");
     if (count) count.textContent = snips.length + " saved";
-    if (!snips.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">&lt;/&gt;</div><p>No snippets saved yet</p><small>Write code above and hit 💾 Save</small></div>'; return; }
+    if (!snips.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">${ep("</>","gold")}</div><p>No snippets saved yet</p><small>Write code above and hit 💾 Save</small></div>'; return; }
     const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
     list.innerHTML = snips.map(s => {
       const shared = s.share_token && s.is_public;
@@ -1431,7 +1445,7 @@ function renderCommandResults() {
   box.innerHTML = _cmdResults.map((r, i) => {
     const meta = _KIND_META[r.kind] || ["📄", "overview"];
     return `<div class="cmd-item ${i === _cmdIndex ? "sel" : ""}" data-i="${i}" onclick="openSearchResult(${i})">
-      <span class="cmd-ic">${meta[0]}</span>
+      <span class="cmd-ic">${ep(meta[0], "premium")}</span>
       <div class="cmd-text"><div class="cmd-title">${escapeHtml(r.title)}</div>${r.sub ? `<div class="cmd-sub">${escapeHtml(r.sub)}</div>` : ""}</div>
       <span class="cmd-kind">${r.kind}</span>
     </div>`;
