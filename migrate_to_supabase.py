@@ -102,6 +102,9 @@ TABLES = [
     ("user_recovery", [
         "id", "user_id", "label", "words", "word_count", "created_at", "updated_at",
     ]),
+    ("snippets", [
+        "id", "user_id", "title", "language", "content", "share_token", "is_public", "views", "created_at", "updated_at",
+    ]),
 ]
 
 

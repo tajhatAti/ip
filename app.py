@@ -1214,6 +1214,27 @@ class GenericDelete(BaseModel):
     id: int
 
 
+# ----------------------------
+# Snippets (code / pastebin)
+# ----------------------------
+class SnippetCreate(BaseModel):
+    title: str
+    language: Optional[str] = "text"
+    content: str
+
+
+class SnippetUpdate(BaseModel):
+    id: int
+    title: Optional[str] = None
+    language: Optional[str] = None
+    content: Optional[str] = None
+
+
+class SnippetShare(BaseModel):
+    id: int
+    share: bool = True
+
+
 class CategoryCreate(BaseModel):
     name: str
     icon: Optional[str] = "📁"
@@ -2103,9 +2124,221 @@ def global_search(q: str, authorization: Optional[str] = Header(None)):
         run("wifi", "SELECT id, label AS title, ssid AS sub FROM user_wifi WHERE user_id = ? AND (LOWER(label) LIKE ? OR LOWER(ssid) LIKE ?)", 2)
         run("server", "SELECT id, name AS title, host AS sub FROM user_servers WHERE user_id = ? AND (LOWER(name) LIKE ? OR LOWER(host) LIKE ?)", 2)
         run("recovery", "SELECT id, label AS title, '' AS sub FROM user_recovery WHERE user_id = ? AND LOWER(label) LIKE ?", 1)
+        run("snippet", "SELECT id, title AS title, language AS sub FROM snippets WHERE user_id = ? AND (LOWER(title) LIKE ? OR LOWER(content) LIKE ?)", 2)
         return {"results": out[:30]}
     finally:
         conn.close()
+
+
+# ================================
+# SNIPPETS (code / pastebin)
+# ================================
+@app.get("/snippets")
+def list_snippets(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, language, content, share_token, is_public, views, created_at, updated_at "
+            "FROM snippets WHERE user_id = ? ORDER BY updated_at DESC", (user["id"],),
+        ).fetchall()
+        return {"snippets": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/snippets")
+def create_snippet(payload: SnippetCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    title = payload.title.strip() or "Untitled snippet"
+    content = payload.content
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Snippet content cannot be empty.")
+    ct = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO snippets (user_id, title, language, content, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user["id"], title, (payload.language or "text")[:32], content, ct, ct),
+        )
+        conn.commit()
+        return {"message": "Snippet saved.", "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/snippets")
+def update_snippet(payload: SnippetUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM snippets WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Snippet not found.")
+        title = payload.title if payload.title is not None else row["title"]
+        language = payload.language if payload.language is not None else row["language"]
+        content = payload.content if payload.content is not None else row["content"]
+        conn.execute("UPDATE snippets SET title=?, language=?, content=?, updated_at=? WHERE id=?",
+                     (title, language, content, now_utc_str(), payload.id))
+        conn.commit()
+        return {"message": "Snippet updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/snippets")
+def delete_snippet(payload: GenericDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM snippets WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Snippet not found.")
+        conn.execute("DELETE FROM snippets WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Snippet deleted."}
+    finally:
+        conn.close()
+
+
+@app.post("/snippets/share")
+def toggle_snippet_share(payload: SnippetShare, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id, share_token FROM snippets WHERE id = ? AND user_id = ?",
+                           (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Snippet not found.")
+        token = row["share_token"]
+        if payload.share:
+            if not token:
+                token = secrets.token_urlsafe(12)
+                conn.execute("UPDATE snippets SET share_token=?, is_public=1 WHERE id=?", (token, payload.id))
+                conn.commit()
+        else:
+            conn.execute("UPDATE snippets SET share_token=NULL, is_public=0 WHERE id=?", (payload.id,))
+            conn.commit()
+            token = None
+        return {"share": payload.share, "token": token,
+                "url": f"/s/{token}" if token else None}
+    finally:
+        conn.close()
+
+
+def _esc(text: str) -> str:
+    """HTML-escape helper for the shared-snippet view."""
+    if not text:
+        return ""
+    return (str(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+@app.get("/s/{token}")
+def view_shared_snippet(token: str):
+    """Public shareable link — NO auth. Renders a standalone 'static' code page
+    so anyone with the private link can view & copy the code."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT title, language, content, created_at, views FROM snippets "
+            "WHERE share_token = ? AND is_public = 1", (token,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="This snippet is private or no longer shared.")
+        conn.execute("UPDATE snippets SET views = views + 1 WHERE share_token = ?", (token,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    lang = (row["language"] or "text").lower()
+    title = row["title"] or "Shared snippet"
+    created = ""
+    try:
+        created = datetime.fromisoformat(row["created_at"]).strftime("%b %d, %Y")
+    except Exception:
+        created = ""
+    body = row["content"] or ""
+    from fastapi.responses import HTMLResponse
+
+    html_page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{_esc(title)} — Ahad Snippet</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box;}}
+  body{{font-family:'Inter',sans-serif;background:#0b0d14;color:#ecedf3;min-height:100vh;
+    background-image:radial-gradient(900px 600px at 10% -10%,rgba(99,102,241,.18),transparent 60%),
+      radial-gradient(760px 480px at 95% 0%,rgba(168,85,247,.12),transparent 55%);
+    background-attachment:fixed;padding:32px 20px 60px;}}
+  .wrap{{max-width:920px;margin:0 auto;}}
+  .head{{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:22px;}}
+  .brand{{display:flex;align-items:center;gap:10px;}}
+  .mark{{width:34px;height:34px;border-radius:10px;background:linear-gradient(120deg,#6366f1,#a855f7);
+    display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;}}
+  .brand span{{font-weight:700;font-size:16px;}}
+  .copy{{padding:9px 16px;background:linear-gradient(120deg,#6366f1,#a855f7);border:none;border-radius:10px;
+    color:#fff;font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;transition:transform .15s;}}
+  .copy:hover{{transform:translateY(-1px);}}
+  .card{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;}}
+  .meta{{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);flex-wrap:wrap;}}
+  .lang{{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+    padding:4px 10px;background:rgba(99,102,241,.15);color:#a5b4fc;border-radius:20px;}}
+  .views{{font-size:12px;color:#626779;margin-left:auto;}}
+  h1{{font-size:20px;font-weight:700;}}
+  .code-scroll{{overflow-x:auto;}}
+  pre{{margin:0!important;border-radius:0!important;}}
+  pre code{{font-family:'JetBrains Mono',monospace!important;font-size:13.5px!important;line-height:1.7!important;padding:20px!important;}}
+  .foot{{text-align:center;margin-top:24px;font-size:12px;color:#626779;}}
+  .foot a{{color:#a5b4fc;text-decoration:none;}}
+  .toast{{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#22d3ee;color:#062a28;
+    padding:11px 22px;border-radius:30px;font-weight:600;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;}}
+  .toast.show{{opacity:1;}}
+  @media(max-width:560px){{body{{padding:16px 12px 40px;}}h1{{font-size:17px;}}pre code{{font-size:12.5px!important;}}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><div class="mark">AC</div><span>Ahad Co</span></div>
+    <button class="copy" id="copyBtn">📋 Copy code</button>
+  </div>
+  <div class="card">
+    <div class="meta">
+      <h1>{_esc(title)}</h1>
+      <span class="lang">{_esc(lang)}</span>
+      <span class="views">{_esc(str(row['views']))} views{(' · ' + created) if created else ''}</span>
+    </div>
+    <div class="code-scroll"><pre><code class="language-{_esc(lang)}" id="code">{_esc(body)}</code></pre></div>
+  </div>
+  <div class="foot">Shared securely via <a href="/">Ahad Co</a> · private link</div>
+</div>
+<div class="toast" id="toast">Copied!</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script>
+  document.getElementById('copyBtn').addEventListener('click', function() {{
+    var code = document.getElementById('code').textContent;
+    navigator.clipboard.writeText(code).then(function() {{
+      var t = document.getElementById('toast'); t.textContent = 'Copied! ✓'; t.classList.add('show');
+      setTimeout(function(){{ t.classList.remove('show'); }}, 1800);
+    }}).catch(function() {{
+      var t = document.getElementById('toast'); t.textContent = 'Copy failed'; t.classList.add('show');
+      setTimeout(function(){{ t.classList.remove('show'); }}, 1800);
+    }});
+  }});
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html_page)
 
 
 # ================================

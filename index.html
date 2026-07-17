@@ -258,6 +258,7 @@
       <button class="dash-tab" data-tab="wifi">WiFi</button>
       <button class="dash-tab" data-tab="servers">Servers</button>
       <button class="dash-tab" data-tab="recovery">Seeds</button>
+      <button class="dash-tab" data-tab="code">Code</button>
       <button class="dash-tab" data-tab="notes">Notes</button>
       <button class="dash-tab" data-tab="bookmarks">Bookmarks</button>
       <button class="dash-tab" data-tab="tasks">Tasks</button>
@@ -459,6 +460,38 @@
       <div class="vault-list" id="recoveryList"></div>
     </div>
 
+    <!-- CODE / SNIPPETS -->
+    <div class="dash-tab-content" id="tab-code">
+      <div class="tab-head"><div><div class="eyebrow">CODE &lt;&gt;</div><h2>Code snippets</h2></div><button class="btn-primary sm" id="btnAddSnippet">＋ New snippet</button></div>
+      <div class="add-form hidden" id="snippetForm">
+        <div class="form-row">
+          <input type="text" id="snippetTitle" class="input-text" placeholder="Snippet title">
+          <select id="snippetLanguage" class="input-select">
+            <option value="text">plaintext</option>
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+            <option value="json">JSON</option>
+            <option value="bash">Bash / Shell</option>
+            <option value="sql">SQL</option>
+            <option value="java">Java</option>
+            <option value="cpp">C / C++</option>
+            <option value="go">Go</option>
+            <option value="php">PHP</option>
+            <option value="ruby">Ruby</option>
+          </select>
+        </div>
+        <textarea id="snippetContent" class="input-code" placeholder="Paste your code here…" spellcheck="false"></textarea>
+        <div class="form-actions">
+          <button class="btn-primary sm" onclick="saveSnippet()">💾 Save snippet</button>
+          <button class="btn-ghost sm" onclick="hideSnippetForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="snippets-list" id="snippetsList"></div>
+    </div>
+
     <!-- NOTES -->
     <div class="dash-tab-content" id="tab-notes">
       <div class="tab-head"><div><div class="eyebrow">JOURNAL</div><h2>Notes</h2></div><button class="btn-primary sm" id="btnAddNote">＋ New note</button></div>
@@ -558,6 +591,7 @@
       <button class="more-item" onclick="switchTab('wifi');closeMoreSheet()">📶<span>WiFi</span></button>
       <button class="more-item" onclick="switchTab('servers');closeMoreSheet()">🖥️<span>Servers</span></button>
       <button class="more-item" onclick="switchTab('recovery');closeMoreSheet()">🌱<span>Seeds</span></button>
+      <button class="more-item" onclick="switchTab('code');closeMoreSheet()">&lt;/&gt;<span>Code</span></button>
       <button class="more-item" onclick="switchTab('notes');closeMoreSheet()">📝<span>Notes</span></button>
       <button class="more-item" onclick="switchTab('bookmarks');closeMoreSheet()">🔖<span>Bookmarks</span></button>
       <button class="more-item" onclick="switchTab('tasks');closeMoreSheet()">✅<span>Tasks</span></button>

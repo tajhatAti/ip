@@ -472,7 +472,7 @@ async function loadDashboard() {
   //    use the buttons and retry. Don't collapse the whole UI on a section
   //    failure, and never clear the token here.
   try {
-    await Promise.all([loadVault(), loadCards(), loadNotes(), loadBookmarks(), loadTasks(), loadIdentities(), loadContacts(), loadWifi(), loadServers(), loadRecovery()]);
+    await Promise.all([loadVault(), loadCards(), loadNotes(), loadBookmarks(), loadTasks(), loadIdentities(), loadContacts(), loadWifi(), loadServers(), loadRecovery(), loadSnippets()]);
   } catch (err) {
     console.error("Section load error (non-fatal):", err);
   }
@@ -1149,6 +1149,105 @@ async function deleteRecovery(id) {
   catch (err) { toast(err.message, "error"); }
 }
 
+/* ==================== CODE SNIPPETS ==================== */
+let editingSnippetId = null;
+
+function showSnippetForm() { document.getElementById("snippetForm").classList.remove("hidden"); document.getElementById("btnAddSnippet").onclick = hideSnippetForm; document.getElementById("btnAddSnippet").textContent = "➖ Hide"; }
+function hideSnippetForm() { document.getElementById("snippetForm").classList.add("hidden"); document.getElementById("btnAddSnippet").onclick = showSnippetForm; document.getElementById("btnAddSnippet").textContent = "＋ New snippet"; ["snippetTitle","snippetContent"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); editingSnippetId = null; }
+
+async function saveSnippet() {
+  const title = document.getElementById("snippetTitle").value.trim();
+  const language = document.getElementById("snippetLanguage").value;
+  const content = document.getElementById("snippetContent").value;
+  if (!content.trim()) { toast("Snippet content cannot be empty!", "error"); return; }
+  try {
+    if (editingSnippetId) { await api("/snippets", "PUT", { id: editingSnippetId, title: title || "Untitled", language, content }, true); toast("Snippet updated! </>", "success"); }
+    else { await api("/snippets", "POST", { title: title || "Untitled snippet", language, content }, true); toast("Snippet saved! </>", "success"); }
+    logEvent("success", "Snippet saved", title || "Untitled");
+    hideSnippetForm(); await loadSnippets();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function loadSnippets() {
+  const list = document.getElementById("snippetsList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  try {
+    const data = await api("/snippets", "GET", null, true);
+    if (!data.snippets || !data.snippets.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">&lt;/&gt;</div><p>No snippets yet</p><small>Paste code and generate a private share link</small></div>`; return; }
+    list.innerHTML = data.snippets.map(s => {
+      const shared = s.share_token && s.is_public;
+      const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
+      const url = shared ? (origin + "/s/" + s.share_token) : "";
+      const preview = (s.content || "").substring(0, 140);
+      return `
+      <div class="snippet-item">
+        <div class="snippet-top">
+          <div class="snippet-head"><span class="snippet-lang">${escapeHtml(s.language || "text")}</span><h4>${escapeHtml(s.title)}</h4></div>
+          <div class="snippet-actions">
+            <button class="vault-btn" onclick='copySnippetCode(${JSON.stringify(s.content)})'>📋 Copy</button>
+            <button class="vault-btn" onclick="startEditSnippet(${s.id})">✏️ Edit</button>
+            <button class="vault-btn ${shared ? "" : "share-off"}" onclick="toggleSnippetShare(${s.id})">${shared ? "🔗 Unshare" : "🔗 Share"}</button>
+            <button class="vault-btn delete" onclick="deleteSnippet(${s.id})">🗑️</button>
+          </div>
+        </div>
+        <pre class="snippet-code"><code>${escapeHtml(preview)}${(s.content||"").length > 140 ? "\n…" : ""}</code></pre>
+        ${shared ? `<div class="snippet-share-url"><span>Private link:</span><code>${escapeHtml(url)}</code><button class="vault-btn" onclick='copyText(${JSON.stringify(url)})'>Copy link</button><button class="vault-btn" onclick='window.open(${JSON.stringify(url)}, "_blank")'>Open</button></div>` : `<div class="snippet-share-url muted"><span>Not shared — click 🔗 Share to generate a private link anyone can open.</span></div>`}
+      </div>`;
+    }).join("");
+  } catch (err) { toast("Could not load snippets: " + err.message, "error"); }
+}
+
+async function startEditSnippet(id) {
+  try {
+    const data = await api("/snippets", "GET", null, true);
+    const s = (data.snippets || []).find(x => x.id === id);
+    if (!s) return;
+    editingSnippetId = id;
+    document.getElementById("snippetTitle").value = s.title || "";
+    document.getElementById("snippetLanguage").value = s.language || "text";
+    document.getElementById("snippetContent").value = s.content || "";
+    document.getElementById("snippetForm").classList.remove("hidden");
+    document.getElementById("btnAddSnippet").textContent = "➖ Hide";
+    document.getElementById("btnAddSnippet").onclick = hideSnippetForm;
+    document.getElementById("snippetForm").scrollIntoView({ behavior: "smooth" });
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function deleteSnippet(id) {
+  if (!confirm("Delete this snippet?")) return;
+  try { await api("/snippets", "DELETE", { id }, true); toast("Snippet deleted!", "success"); await loadSnippets(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+async function toggleSnippetShare(id) {
+  // Read current share state to decide share vs unshare.
+  let nowShared = false;
+  try {
+    const data = await api("/snippets", "GET", null, true);
+    const s = (data.snippets || []).find(x => x.id === id);
+    nowShared = !!(s && s.share_token && s.is_public);
+  } catch (e) {}
+  try {
+    const res = await api("/snippets/share", "POST", { id, share: !nowShared }, true);
+    if (res.share && res.url) {
+      const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
+      const full = origin + res.url;
+      try { await navigator.clipboard.writeText(full); toast("Private share link copied! 🔗", "success"); }
+      catch (e) { toast("Private share link created! 🔗", "success"); }
+      logEvent("success", "Snippet shared", "Private link generated");
+    } else {
+      toast("Sharing disabled for this snippet.", "info");
+      logEvent("warning", "Snippet unshared", "");
+    }
+    await loadSnippets();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function copySnippetCode(code) {
+  try { await navigator.clipboard.writeText(code || ""); toast("Code copied! 📋", "success"); }
+  catch (e) { toast("Copy failed", "error"); }
+}
+
 /* ==================== HELPERS ==================== */
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t || ""); toast("Copied! 📋", "success"); }
@@ -1159,7 +1258,7 @@ async function copyText(t) {
 const _KIND_META = {
   vault: ["🔐", "vault"], card: ["💳", "cards"], note: ["📝", "notes"], bookmark: ["🔖", "bookmarks"],
   task: ["✅", "tasks"], contact: ["👥", "contacts"], identity: ["🪪", "identities"],
-  wifi: ["📶", "wifi"], server: ["🖥️", "servers"], recovery: ["🌱", "recovery"],
+  wifi: ["📶", "wifi"], server: ["🖥️", "servers"], recovery: ["🌱", "recovery"], snippet: ["</>", "code"],
 };
 let _cmdTimer = null, _cmdResults = [], _cmdIndex = -1;
 
@@ -1362,6 +1461,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnAddServer) btnAddServer.addEventListener("click", showServerForm);
   const btnAddRecovery = document.getElementById("btnAddRecovery");
   if (btnAddRecovery) btnAddRecovery.addEventListener("click", showRecoveryForm);
+  const btnAddSnippet = document.getElementById("btnAddSnippet");
+  if (btnAddSnippet) btnAddSnippet.addEventListener("click", showSnippetForm);
   const btnAddNote = document.getElementById("btnAddNote");
   if (btnAddNote) btnAddNote.addEventListener("click", showNoteForm);
   const btnAddBookmark = document.getElementById("btnAddBookmark");
