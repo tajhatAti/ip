@@ -1149,11 +1149,21 @@ async function deleteRecovery(id) {
   catch (err) { toast(err.message, "error"); }
 }
 
-/* ==================== CODE SNIPPETS ==================== */
+/* ==================== CODE SNIPPETS (IDE workspace) ==================== */
 let editingSnippetId = null;
+let _livePreviewTimer = null;
+const _RUNNABLE_LANGS = {"html":1, "css":1, "javascript":1, "js":1, "markdown":1, "md":1};
 
-function showSnippetForm() { document.getElementById("snippetForm").classList.remove("hidden"); document.getElementById("btnAddSnippet").onclick = hideSnippetForm; document.getElementById("btnAddSnippet").textContent = "➖ Hide"; }
-function hideSnippetForm() { document.getElementById("snippetForm").classList.add("hidden"); document.getElementById("btnAddSnippet").onclick = showSnippetForm; document.getElementById("btnAddSnippet").textContent = "＋ New snippet"; ["snippetTitle","snippetContent"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); editingSnippetId = null; }
+function newSnippetDraft() {
+  editingSnippetId = null;
+  document.getElementById("snippetTitle").value = "";
+  const ta = document.getElementById("snippetContent"); ta.value = "";
+  document.getElementById("snippetLanguage").value = "html";
+  updateEditorMeta();
+  runLivePreview();
+  ta.focus();
+  toast("New snippet — write something and hit Run ▶", "info");
+}
 
 async function saveSnippet() {
   const title = document.getElementById("snippetTitle").value.trim();
@@ -1162,42 +1172,138 @@ async function saveSnippet() {
   if (!content.trim()) { toast("Snippet content cannot be empty!", "error"); return; }
   try {
     if (editingSnippetId) { await api("/snippets", "PUT", { id: editingSnippetId, title: title || "Untitled", language, content }, true); toast("Snippet updated! </>", "success"); }
-    else { await api("/snippets", "POST", { title: title || "Untitled snippet", language, content }, true); toast("Snippet saved! </>", "success"); }
+    else {
+      const r = await api("/snippets", "POST", { title: title || "Untitled snippet", language, content }, true);
+      editingSnippetId = r.id; toast("Snippet saved! </>", "success");
+    }
     logEvent("success", "Snippet saved", title || "Untitled");
-    hideSnippetForm(); await loadSnippets();
+    await loadSnippets();
   } catch (err) { toast(err.message, "error"); }
 }
 
+function updateEditorMeta() {
+  const ta = document.getElementById("snippetContent");
+  const meta = document.getElementById("editorMeta");
+  if (!ta || !meta) return;
+  const lines = ta.value.split("\n").length;
+  meta.textContent = lines + " lines · " + ta.value.length + " chars";
+}
+
+/* Build the srcdoc for the live preview iframe, matching the share page. */
+function _buildPreviewSrcdoc(body, lang) {
+  body = body || "";
+  lang = (lang || "text").toLowerCase();
+  if (lang === "html") return body;
+  if (lang === "css") {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + body + '</style></head>' +
+      '<body style="font-family:system-ui,sans-serif;padding:24px;color:#111;background:#fff">' +
+      '<h1>Heading</h1><p>Paragraph to show your <strong>CSS</strong>. <a href="#">A link</a>.</p>' +
+      '<button>Button</button><ul><li>Item one</li><li>Item two</li></ul><input placeholder="Input"></body></html>';
+  }
+  if (lang === "markdown" || lang === "md") {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script></head><body style="font-family:system-ui,sans-serif;padding:28px;max-width:720px;margin:0 auto;color:#1a1a2e;line-height:1.7;background:#fff"><div id="r"></div><script>document.getElementById("r").innerHTML = (window.marked ? marked.parse(decodeURIComponent(atob("' + btoaSafe(encodeURIComponent(body)) + '"))) : "");<\/script></body></html>';
+  }
+  if (lang === "javascript" || lang === "js") {
+    var safe = body.split("<\/script>").join("<\\/script>");
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:system-ui,sans-serif;padding:20px;color:#111;background:#fff"><scr' + 'ipt>(function(){var P=function(t,a){parent.postMessage({__ideConsole:true,type:t,msg:Array.prototype.map.call(a,function(x){try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(e){return String(x)}}).join(" ")},\'*\')};["log","info","warn","error"].forEach(function(m){console[m]=function(){P(m==="error"?"err":(m==="warn"?"warn":"info"),arguments)}});window.onerror=function(m,s,l,c){P("err",[m+" (line "+l+")"])};try{\n' + safe + '\n}catch(e){P("err",[e.message])}})();<\/scr' + 'ipt></body></html>';
+  }
+  return "";
+}
+
+/* base64 of a UTF-8-safe string (for embedding into the markdown preview). */
+function btoaSafe(str) {
+  try { return btoa(str); } catch (e) { return btoa(unescape(encodeURIComponent(str))); }
+}
+
+function runLivePreview() {
+  const lang = document.getElementById("snippetLanguage").value;
+  const content = document.getElementById("snippetContent").value;
+  const frame = document.getElementById("livePreview");
+  const pmeta = document.getElementById("previewMeta");
+  if (!frame) return;
+  const runnable = !!_RUNNABLE_LANGS[(lang || "").toLowerCase()];
+  const consoleBox = document.getElementById("ideConsole");
+  const icBody = document.getElementById("icBody");
+  if (consoleBox) consoleBox.style.display = "none";
+  if (icBody) icBody.innerHTML = "";
+  if (!runnable) {
+    frame.srcdoc = '<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0;color:#94a3b8;background:#f8fafc;text-align:center;padding:20px"><div><div style="font-size:40px">👁️</div><p style="margin-top:10px;font-size:14px">Live preview supports<br><b>HTML, CSS, JavaScript &amp; Markdown</b>.</p><p style="font-size:12px;color:#cbd5e1;margin-top:6px">Other languages show in the share link as highlighted code.</p></div></body></html>';
+    if (pmeta) pmeta.textContent = "no preview";
+    return;
+  }
+  frame.srcdoc = _buildPreviewSrcdoc(content, lang);
+  if (pmeta) pmeta.textContent = "live · " + lang;
+}
+
+/* Capture console messages from the JS preview iframe. */
+window.addEventListener("message", function (ev) {
+  var d = ev.data;
+  if (!d || !d.__ideConsole) return;
+  var box = document.getElementById("ideConsole");
+  var body = document.getElementById("icBody");
+  if (!box || !body) return;
+  box.style.display = "flex";
+  var ln = document.createElement("div");
+  ln.className = "ln " + (d.type === "err" ? "err" : "info");
+  ln.textContent = (d.type === "err" ? "✕ " : "› ") + d.msg;
+  body.appendChild(ln);
+  body.scrollTop = body.scrollHeight;
+});
+
+/* Simple JSON / HTML / CSS formatter (best-effort, client-side). */
+function formatSnippet() {
+  const ta = document.getElementById("snippetContent");
+  const lang = document.getElementById("snippetLanguage").value;
+  const orig = ta.value;
+  let out = orig;
+  try {
+    if (lang === "json") { out = JSON.stringify(JSON.parse(orig), null, 2); }
+    else if (lang === "html") { out = _formatMarkup(orig); }
+    else if (lang === "css") { out = _formatCSS(orig); }
+    else { out = orig.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim() + "\n"; }
+    ta.value = out;
+    updateEditorMeta();
+    runLivePreview();
+    toast("Formatted ✨", "success");
+  } catch (e) { toast("Could not format: " + e.message, "error"); }
+}
+function _formatMarkup(src) { return src.replace(/>\s*</g, ">\n<").replace(/^\s+|\s+$/g, "") + "\n"; }
+function _formatCSS(src) { return src.replace(/\s*\{\s*/g, " {\n  ").replace(/;\s*/g, ";\n  ").replace(/\s*\}\s*/g, "\n}\n").replace(/\n\s*\n/g, "\n").trim() + "\n"; }
+
 async function loadSnippets() {
   const list = document.getElementById("snippetsList");
-  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  if (!list) return;
+  list.innerHTML = '<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>';
   try {
     const data = await api("/snippets", "GET", null, true);
-    if (!data.snippets || !data.snippets.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">&lt;/&gt;</div><p>No snippets yet</p><small>Paste code and generate a private share link</small></div>`; return; }
-    list.innerHTML = data.snippets.map(s => {
+    const snips = data.snippets || [];
+    const count = document.getElementById("snippetCount");
+    if (count) count.textContent = snips.length + " saved";
+    if (!snips.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">&lt;/&gt;</div><p>No snippets saved yet</p><small>Write code above and hit 💾 Save</small></div>'; return; }
+    const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
+    list.innerHTML = snips.map(s => {
       const shared = s.share_token && s.is_public;
-      const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
       const url = shared ? (origin + "/s/" + s.share_token) : "";
-      const preview = (s.content || "").substring(0, 140);
-      return `
-      <div class="snippet-item">
-        <div class="snippet-top">
-          <div class="snippet-head"><span class="snippet-lang">${escapeHtml(s.language || "text")}</span><h4>${escapeHtml(s.title)}</h4></div>
-          <div class="snippet-actions">
-            <button class="vault-btn" onclick='copySnippetCode(${JSON.stringify(s.content)})'>📋 Copy</button>
-            <button class="vault-btn" onclick="startEditSnippet(${s.id})">✏️ Edit</button>
-            <button class="vault-btn ${shared ? "" : "share-off"}" onclick="toggleSnippetShare(${s.id})">${shared ? "🔗 Unshare" : "🔗 Share"}</button>
-            <button class="vault-btn delete" onclick="deleteSnippet(${s.id})">🗑️</button>
-          </div>
-        </div>
-        <pre class="snippet-code"><code>${escapeHtml(preview)}${(s.content||"").length > 140 ? "\n…" : ""}</code></pre>
-        ${shared ? `<div class="snippet-share-url"><span>Private link:</span><code>${escapeHtml(url)}</code><button class="vault-btn" onclick='copyText(${JSON.stringify(url)})'>Copy link</button><button class="vault-btn" onclick='window.open(${JSON.stringify(url)}, "_blank")'>Open</button></div>` : `<div class="snippet-share-url muted"><span>Not shared — click 🔗 Share to generate a private link anyone can open.</span></div>`}
-      </div>`;
+      const preview = (s.content || "").substring(0, 120);
+      return '<div class="snippet-item">' +
+        '<div class="snippet-top">' +
+          '<div class="snippet-head"><span class="snippet-lang">' + escapeHtml(s.language || "text") + '</span><h4>' + escapeHtml(s.title) + '</h4></div>' +
+          '<div class="snippet-actions">' +
+            '<button class="vault-btn" onclick="loadSnippetIntoEditor(' + s.id + ')">📂 Open</button>' +
+            '<button class="vault-btn" onclick="copySnippetCode(' + s.id + ')">📋 Copy</button>' +
+            '<button class="vault-btn" onclick="toggleSnippetShare(' + s.id + ')">' + (shared ? "🔗 Unshare" : "🔗 Share") + '</button>' +
+            '<button class="vault-btn delete" onclick="deleteSnippet(' + s.id + ')">🗑️</button>' +
+          '</div>' +
+        '</div>' +
+        '<pre class="snippet-code"><code>' + escapeHtml(preview) + ((s.content || "").length > 120 ? "\n…" : "") + '</code></pre>' +
+        (shared ? '<div class="snippet-share-url"><span>Private link:</span><code>' + escapeHtml(url) + '</code><button class="vault-btn" onclick="copyText(' + JSON.stringify(url) + ')">Copy link</button><button class="vault-btn" onclick="window.open(' + JSON.stringify(url) + ', \'_blank\')">Open ↗</button></div>' : '<div class="snippet-share-url muted"><span>Not shared — click 🔗 Share to generate a private link that renders the code live.</span></div>') +
+      '</div>';
     }).join("");
   } catch (err) { toast("Could not load snippets: " + err.message, "error"); }
 }
 
-async function startEditSnippet(id) {
+/* Load a saved snippet into the editor. */
+async function loadSnippetIntoEditor(id) {
   try {
     const data = await api("/snippets", "GET", null, true);
     const s = (data.snippets || []).find(x => x.id === id);
@@ -1206,21 +1312,28 @@ async function startEditSnippet(id) {
     document.getElementById("snippetTitle").value = s.title || "";
     document.getElementById("snippetLanguage").value = s.language || "text";
     document.getElementById("snippetContent").value = s.content || "";
-    document.getElementById("snippetForm").classList.remove("hidden");
-    document.getElementById("btnAddSnippet").textContent = "➖ Hide";
-    document.getElementById("btnAddSnippet").onclick = hideSnippetForm;
-    document.getElementById("snippetForm").scrollIntoView({ behavior: "smooth" });
+    updateEditorMeta();
+    runLivePreview();
+    toast("Loaded into editor ✏️", "info");
+    document.querySelector(".ide").scrollIntoView({ behavior: "smooth" });
   } catch (err) { toast(err.message, "error"); }
 }
 
 async function deleteSnippet(id) {
   if (!confirm("Delete this snippet?")) return;
-  try { await api("/snippets", "DELETE", { id }, true); toast("Snippet deleted!", "success"); await loadSnippets(); }
+  try { await api("/snippets", "DELETE", { id }, true); toast("Snippet deleted!", "success"); if (editingSnippetId === id) newSnippetDraft(); await loadSnippets(); }
   catch (err) { toast(err.message, "error"); }
 }
 
+/* Share the snippet currently in the editor (creates if unsaved). */
+async function shareCurrentSnippet() {
+  let id = editingSnippetId;
+  if (!id) { await saveSnippet(); id = editingSnippetId; }
+  if (!id) return;
+  await toggleSnippetShare(id);
+}
+
 async function toggleSnippetShare(id) {
-  // Read current share state to decide share vs unshare.
   let nowShared = false;
   try {
     const data = await api("/snippets", "GET", null, true);
@@ -1232,9 +1345,9 @@ async function toggleSnippetShare(id) {
     if (res.share && res.url) {
       const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
       const full = origin + res.url;
-      try { await navigator.clipboard.writeText(full); toast("Private share link copied! 🔗", "success"); }
+      try { await navigator.clipboard.writeText(full); toast("Private link copied! 🔗 Open it to see the code RUN.", "success"); }
       catch (e) { toast("Private share link created! 🔗", "success"); }
-      logEvent("success", "Snippet shared", "Private link generated");
+      logEvent("success", "Snippet shared", "Private link generated — runs live");
     } else {
       toast("Sharing disabled for this snippet.", "info");
       logEvent("warning", "Snippet unshared", "");
@@ -1243,9 +1356,41 @@ async function toggleSnippetShare(id) {
   } catch (err) { toast(err.message, "error"); }
 }
 
-async function copySnippetCode(code) {
-  try { await navigator.clipboard.writeText(code || ""); toast("Code copied! 📋", "success"); }
-  catch (e) { toast("Copy failed", "error"); }
+async function copySnippetCode(id) {
+  try {
+    const data = await api("/snippets", "GET", null, true);
+    const s = (data.snippets || []).find(x => x.id === id);
+    if (!s) return;
+    await navigator.clipboard.writeText(s.content || "");
+    toast("Code copied! 📋", "success");
+  } catch (e) { toast("Copy failed", "error"); }
+}
+
+/* Draggable split divider between editor and preview. */
+function initIdeDivider() {
+  const divider = document.getElementById("ideDivider");
+  const split = document.getElementById("ideSplit");
+  if (!divider || !split) return;
+  let dragging = false;
+  const start = (e) => { dragging = true; divider.classList.add("dragging"); document.body.style.userSelect = "none"; e.preventDefault(); };
+  const move = (e) => {
+    if (!dragging) return;
+    const rect = split.getBoundingClientRect();
+    const point = e.touches ? e.touches[0].clientX : e.clientX;
+    const pct = ((point - rect.left) / rect.width) * 100;
+    const clamped = Math.max(20, Math.min(80, pct));
+    const editor = split.querySelector(".ide-editor");
+    const preview = split.querySelector(".ide-preview");
+    if (editor) editor.style.flex = "0 0 " + clamped + "%";
+    if (preview) preview.style.flex = "1 1 auto";
+  };
+  const end = () => { dragging = false; divider.classList.remove("dragging"); document.body.style.userSelect = ""; };
+  divider.addEventListener("mousedown", start);
+  divider.addEventListener("touchstart", start, { passive: false });
+  document.addEventListener("mousemove", move);
+  document.addEventListener("touchmove", move, { passive: false });
+  document.addEventListener("mouseup", end);
+  document.addEventListener("touchend", end);
 }
 
 /* ==================== HELPERS ==================== */
@@ -1462,7 +1607,41 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnAddRecovery = document.getElementById("btnAddRecovery");
   if (btnAddRecovery) btnAddRecovery.addEventListener("click", showRecoveryForm);
   const btnAddSnippet = document.getElementById("btnAddSnippet");
-  if (btnAddSnippet) btnAddSnippet.addEventListener("click", showSnippetForm);
+  if (btnAddSnippet) btnAddSnippet.addEventListener("click", newSnippetDraft);
+  // Code IDE wiring
+  const btnSaveSnippet = document.getElementById("btnSaveSnippet");
+  if (btnSaveSnippet) btnSaveSnippet.addEventListener("click", saveSnippet);
+  const btnRunSnippet = document.getElementById("btnRunSnippet");
+  if (btnRunSnippet) btnRunSnippet.addEventListener("click", () => { runLivePreview(); toast("Preview updated ▶", "success"); });
+  const btnFormatSnippet = document.getElementById("btnFormatSnippet");
+  if (btnFormatSnippet) btnFormatSnippet.addEventListener("click", formatSnippet);
+  const btnShareSnippet = document.getElementById("btnShareSnippet");
+  if (btnShareSnippet) btnShareSnippet.addEventListener("click", shareCurrentSnippet);
+  const btnNewSnippet = document.getElementById("btnNewSnippet");
+  if (btnNewSnippet) btnNewSnippet.addEventListener("click", newSnippetDraft);
+  // editor live updates (debounced) + meta + language change + Tab key
+  const snippetContent = document.getElementById("snippetContent");
+  if (snippetContent) {
+    snippetContent.addEventListener("input", () => {
+      updateEditorMeta();
+      clearTimeout(_livePreviewTimer);
+      _livePreviewTimer = setTimeout(runLivePreview, 400);
+    });
+    snippetContent.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = e.target, start = s.selectionStart, end = s.selectionEnd;
+        s.value = s.value.substring(0, start) + "  " + s.value.substring(end);
+        s.selectionStart = s.selectionEnd = start + 2;
+        updateEditorMeta();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runLivePreview(); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveSnippet(); }
+    });
+  }
+  const snippetLanguage = document.getElementById("snippetLanguage");
+  if (snippetLanguage) snippetLanguage.addEventListener("change", runLivePreview);
+  initIdeDivider();
   const btnAddNote = document.getElementById("btnAddNote");
   if (btnAddNote) btnAddNote.addEventListener("click", showNoteForm);
   const btnAddBookmark = document.getElementById("btnAddBookmark");
