@@ -1301,7 +1301,11 @@ def update_note(payload: NoteUpdate, authorization: Optional[str] = Header(None)
         title = payload.title if payload.title is not None else row["title"]
         content = payload.content if payload.content is not None else row["content"]
         color = payload.color if payload.color is not None else row["color"]
-        pinned = 1 if payload.pinned else 0
+        # Preserve existing pinned state if not explicitly passed
+        if payload.pinned is not None:
+            pinned = 1 if payload.pinned else 0
+        else:
+            pinned = row["pinned"]
         
         conn.execute(
             "UPDATE user_notes SET title=?, content=?, color=?, pinned=?, updated_at=? WHERE id=?",

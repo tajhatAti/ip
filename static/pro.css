@@ -924,6 +924,13 @@ body {
 
 .note-card:hover .note-actions { opacity: 1; }
 
+.pin-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 14px;
+}
+
 /* Bookmarks List */
 .bookmarks-list { display: flex; flex-direction: column; gap: 12px; }
 
