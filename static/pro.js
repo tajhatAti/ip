@@ -295,6 +295,7 @@ async function handleForgot3(e) {
 
 /* ==================== DASHBOARD ==================== */
 async function loadDashboard() {
+  // 1) Critical auth check — ONLY a profile/401 failure ends the session.
   try {
     const profile = await api("/profile", "GET", null, true);
     document.getElementById("dashUsername").textContent = profile.username;
@@ -309,18 +310,27 @@ async function loadDashboard() {
       const days = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24));
       document.getElementById("statDays").textContent = days || 1;
     }
-
-    await Promise.all([loadVault(), loadNotes(), loadBookmarks()]);
-
-    const vaultData = await api("/vault", "GET", null, true);
-    document.getElementById("statVault").textContent = (vaultData.entries || []).length;
   } catch (err) {
-    console.error("Dashboard load error:", err);
+    console.error("Dashboard auth error:", err);
     toast("Session expired. Please login again.", "error");
     authToken = null;
     localStorage.removeItem("ahad_token");
     showScreen("screen-signin");
+    return;
   }
+
+  // 2) Section loads are NON-FATAL. If one section fails (network glitch,
+  //    transient 500, etc.) the dashboard must still show so the user can
+  //    use the buttons and retry. Don't collapse the whole UI on a section
+  //    failure, and never clear the token here.
+  try {
+    await Promise.all([loadVault(), loadNotes(), loadBookmarks()]);
+  } catch (err) {
+    console.error("Section load error (non-fatal):", err);
+  }
+  await loadStats(); // updates the stat counters
+
+  showScreen("screen-dashboard");
 }
 
 /* ==================== VAULT ==================== */
@@ -383,7 +393,7 @@ async function loadVault() {
         </div>
       </div>
     `).join("");
-  } catch (err) { console.error("Load vault error:", err); }
+  } catch (err) { console.error("Load vault error:", err); toast("Could not load vault: " + err.message, "error"); }
 }
 
 function startEditVault(id, type, label, value) {
@@ -462,7 +472,7 @@ async function loadNotes() {
       </div>
     `).join("");
     const sn = document.getElementById("statNotes"); if (sn) sn.textContent = data.notes.length;
-  } catch (err) { console.error("Load notes error:", err); }
+  } catch (err) { console.error("Load notes error:", err); toast("Could not load notes: " + err.message, "error"); }
 }
 
 function startEditNote(id, title, content, color) {
@@ -552,7 +562,7 @@ async function loadBookmarks() {
       </div>
     `).join("");
     const sb = document.getElementById("statBookmarks"); if (sb) sb.textContent = data.bookmarks.length;
-  } catch (err) { console.error("Load bookmarks error:", err); }
+  } catch (err) { console.error("Load bookmarks error:", err); toast("Could not load bookmarks: " + err.message, "error"); }
 }
 
 function startEditBookmark(id, title, url, description) {
