@@ -87,6 +87,21 @@ TABLES = [
     ("user_tasks", [
         "id", "user_id", "title", "completed", "priority", "created_at", "updated_at",
     ]),
+    ("user_identities", [
+        "id", "user_id", "type", "label", "fields", "created_at", "updated_at",
+    ]),
+    ("user_contacts", [
+        "id", "user_id", "name", "email", "phone", "company", "address", "note", "created_at", "updated_at",
+    ]),
+    ("user_wifi", [
+        "id", "user_id", "label", "ssid", "password", "security", "hidden", "location", "created_at", "updated_at",
+    ]),
+    ("user_servers", [
+        "id", "user_id", "name", "host", "port", "username", "password", "keyfile", "note", "created_at", "updated_at",
+    ]),
+    ("user_recovery", [
+        "id", "user_id", "label", "words", "word_count", "created_at", "updated_at",
+    ]),
 ]
 
 

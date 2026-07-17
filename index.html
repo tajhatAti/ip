@@ -253,12 +253,19 @@
       <button class="dash-tab active" data-tab="overview">Overview</button>
       <button class="dash-tab" data-tab="vault">Vault</button>
       <button class="dash-tab" data-tab="cards">Cards</button>
+      <button class="dash-tab" data-tab="identities">IDs</button>
+      <button class="dash-tab" data-tab="contacts">Contacts</button>
+      <button class="dash-tab" data-tab="wifi">WiFi</button>
+      <button class="dash-tab" data-tab="servers">Servers</button>
+      <button class="dash-tab" data-tab="recovery">Seeds</button>
       <button class="dash-tab" data-tab="notes">Notes</button>
       <button class="dash-tab" data-tab="bookmarks">Bookmarks</button>
       <button class="dash-tab" data-tab="tasks">Tasks</button>
       <button class="dash-tab" data-tab="profile">Profile</button>
     </nav>
     <div class="dash-user">
+      <button class="icon-btn" id="cmdBtn" title="Search (Ctrl+K)"><span>🔍</span></button>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme"><span id="themeIcon">🌙</span></button>
       <span class="user-name" id="dashUsername">User</span>
       <button class="btn-ghost sm" id="btnLogout">Sign out</button>
     </div>
@@ -348,6 +355,110 @@
       <div class="cards-grid" id="cardsList"></div>
     </div>
 
+    <!-- IDENTITIES -->
+    <div class="dash-tab-content" id="tab-identities">
+      <div class="tab-head"><div><div class="eyebrow">DOCUMENTS</div><h2>Identities</h2></div><button class="btn-primary sm" id="btnAddIdentity">＋ Add ID</button></div>
+      <div class="add-form hidden" id="identityForm">
+        <div class="form-row">
+          <select id="identityType" class="input-select">
+            <option value="passport">🛂 Passport</option>
+            <option value="national_id">🪪 National ID</option>
+            <option value="license">🚗 Driver's licence</option>
+            <option value="address">🏠 Address</option>
+            <option value="tax">🧾 Tax / NID</option>
+            <option value="other">📄 Other</option>
+          </select>
+          <input type="text" id="identityLabel" class="input-text" placeholder="Label (e.g. Main passport)">
+        </div>
+        <textarea id="identityFields" class="input-textarea" placeholder="One field per line, e.g:&#10;Number: AB1234567&#10;Name: Ahad Rahman&#10;Expiry: 2030-01-01"></textarea>
+        <div class="form-actions">
+          <button class="btn-primary sm" onclick="saveIdentity()">💾 Save</button>
+          <button class="btn-ghost sm" onclick="hideIdentityForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="vault-list" id="identitiesList"></div>
+    </div>
+
+    <!-- CONTACTS -->
+    <div class="dash-tab-content" id="tab-contacts">
+      <div class="tab-head"><div><div class="eyebrow">PEOPLE</div><h2>Contacts</h2></div><button class="btn-primary sm" id="btnAddContact">＋ Add contact</button></div>
+      <div class="add-form hidden" id="contactForm">
+        <div class="form-row">
+          <input type="text" id="contactName" class="input-text" placeholder="Full name">
+          <input type="text" id="contactCompany" class="input-text" placeholder="Company (optional)">
+        </div>
+        <div class="form-row">
+          <input type="email" id="contactEmail" class="input-text" placeholder="Email">
+          <input type="tel" id="contactPhone" class="input-text" placeholder="Phone">
+        </div>
+        <input type="text" id="contactAddress" class="input-text" placeholder="Address (optional)">
+        <textarea id="contactNote" class="input-textarea" placeholder="Note (optional)"></textarea>
+        <div class="form-actions">
+          <button class="btn-primary sm" onclick="saveContact()">💾 Save</button>
+          <button class="btn-ghost sm" onclick="hideContactForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="vault-list" id="contactsList"></div>
+    </div>
+
+    <!-- WIFI -->
+    <div class="dash-tab-content" id="tab-wifi">
+      <div class="tab-head"><div><div class="eyebrow">NETWORKS</div><h2>WiFi</h2></div><button class="btn-primary sm" id="btnAddWifi">＋ Add WiFi</button></div>
+      <div class="add-form hidden" id="wifiForm">
+        <input type="text" id="wifiLabel" class="input-text" placeholder="Label (e.g. Home / Office)">
+        <input type="text" id="wifiSsid" class="input-text" placeholder="Network name (SSID)">
+        <input type="text" id="wifiPassword" class="input-text mono" placeholder="Password">
+        <div class="form-row">
+          <select id="wifiSecurity" class="input-select">
+            <option value="WPA">WPA/WPA2</option>
+            <option value="WEP">WEP</option>
+            <option value="nopass">None</option>
+          </select>
+          <input type="text" id="wifiLocation" class="input-text" placeholder="Location (optional)">
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary sm" onclick="saveWifi()">💾 Save</button>
+          <button class="btn-ghost sm" onclick="hideWifiForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="vault-list" id="wifiList"></div>
+    </div>
+
+    <!-- SERVERS -->
+    <div class="dash-tab-content" id="tab-servers">
+      <div class="tab-head"><div><div class="eyebrow">INFRA</div><h2>Servers</h2></div><button class="btn-primary sm" id="btnAddServer">＋ Add server</button></div>
+      <div class="add-form hidden" id="serverForm">
+        <input type="text" id="serverName" class="input-text" placeholder="Name (e.g. Prod web)">
+        <div class="form-row">
+          <input type="text" id="serverHost" class="input-text mono" placeholder="host or IP">
+          <input type="number" id="serverPort" class="input-text mono" placeholder="port" value="22">
+        </div>
+        <input type="text" id="serverUsername" class="input-text mono" placeholder="username">
+        <input type="text" id="serverPassword" class="input-text mono" placeholder="password (optional)">
+        <textarea id="serverNote" class="input-textarea" placeholder="Private key / note (optional)"></textarea>
+        <div class="form-actions">
+          <button class="btn-primary sm" onclick="saveServer()">💾 Save</button>
+          <button class="btn-ghost sm" onclick="hideServerForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="vault-list" id="serversList"></div>
+    </div>
+
+    <!-- RECOVERY / SEEDS -->
+    <div class="dash-tab-content" id="tab-recovery">
+      <div class="tab-head"><div><div class="eyebrow">CRYPTO</div><h2>Recovery phrases</h2></div><button class="btn-primary sm" id="btnAddRecovery">＋ Add phrase</button></div>
+      <div class="add-form hidden" id="recoveryForm">
+        <input type="text" id="recoveryLabel" class="input-text" placeholder="Label (e.g. BTC wallet)">
+        <textarea id="recoveryWords" class="input-textarea tall" placeholder="Paste your 12 or 24-word seed phrase…"></textarea>
+        <div class="form-actions">
+          <button class="btn-primary sm" onclick="saveRecovery()">💾 Save</button>
+          <button class="btn-ghost sm" onclick="hideRecoveryForm()">Cancel</button>
+        </div>
+        <p class="auth-hint">⚠️ Store seed phrases only on devices you trust. Keep them offline where possible.</p>
+      </div>
+      <div class="vault-list" id="recoveryList"></div>
+    </div>
+
     <!-- NOTES -->
     <div class="dash-tab-content" id="tab-notes">
       <div class="tab-head"><div><div class="eyebrow">JOURNAL</div><h2>Notes</h2></div><button class="btn-primary sm" id="btnAddNote">＋ New note</button></div>
@@ -435,22 +546,45 @@
   <nav class="bottom-nav" id="bottomNav">
     <button class="bn-item active" data-tab="overview"><span class="bn-ic">⌂</span><span class="bn-l">Home</span></button>
     <button class="bn-item" data-tab="vault"><span class="bn-ic">🔐</span><span class="bn-l">Vault</span></button>
+    <button class="bn-item" id="bnSearch"><span class="bn-ic">🔍</span><span class="bn-l">Search</span></button>
     <button class="bn-item" data-tab="cards"><span class="bn-ic">💳</span><span class="bn-l">Cards</span></button>
-    <button class="bn-item" data-tab="notes"><span class="bn-ic">📝</span><span class="bn-l">Notes</span></button>
     <button class="bn-item" data-tab="more" id="bnMore"><span class="bn-ic">⋯</span><span class="bn-l">More</span></button>
   </nav>
   <div class="more-sheet hidden" id="moreSheet">
     <div class="more-handle"></div>
     <div class="more-grid">
+      <button class="more-item" onclick="switchTab('identities');closeMoreSheet()">🪪<span>IDs</span></button>
+      <button class="more-item" onclick="switchTab('contacts');closeMoreSheet()">👥<span>Contacts</span></button>
+      <button class="more-item" onclick="switchTab('wifi');closeMoreSheet()">📶<span>WiFi</span></button>
+      <button class="more-item" onclick="switchTab('servers');closeMoreSheet()">🖥️<span>Servers</span></button>
+      <button class="more-item" onclick="switchTab('recovery');closeMoreSheet()">🌱<span>Seeds</span></button>
+      <button class="more-item" onclick="switchTab('notes');closeMoreSheet()">📝<span>Notes</span></button>
       <button class="more-item" onclick="switchTab('bookmarks');closeMoreSheet()">🔖<span>Bookmarks</span></button>
       <button class="more-item" onclick="switchTab('tasks');closeMoreSheet()">✅<span>Tasks</span></button>
       <button class="more-item" onclick="switchTab('profile');closeMoreSheet()">👤<span>Profile</span></button>
       <button class="more-item" onclick="openActivityPanel();closeMoreSheet()">🔔<span>Activity</span></button>
-      <button class="more-item" onclick="closeMoreSheet()">🗑️<span>Delete</span></button>
+      <button class="more-item" id="bnTheme2" onclick="toggleTheme();">🌙<span>Theme</span></button>
       <button class="more-item danger" id="bnLogout" onclick="closeMoreSheet()">🚪<span>Sign out</span></button>
     </div>
   </div>
   <div class="more-overlay hidden" id="moreOverlay"></div>
+</div>
+
+<!-- ============ COMMAND PALETTE / SEARCH ============ -->
+<div class="cmd-overlay hidden" id="cmdOverlay">
+  <div class="cmd-box">
+    <div class="cmd-input-row">
+      <span>🔍</span>
+      <input type="text" id="cmdInput" placeholder="Search across your vault, cards, notes, contacts…" autocomplete="off">
+      <kbd>Esc</kbd>
+    </div>
+    <div class="cmd-results" id="cmdResults">
+      <div class="cmd-empty">Start typing to search everything you've saved…</div>
+    </div>
+    <div class="cmd-foot">
+      <span>↑↓ navigate</span><span>↵ open</span><span>esc close</span>
+    </div>
+  </div>
 </div>
 
 <!-- ============ ACTIVITY LOG SLIDE-IN PANEL ============ -->

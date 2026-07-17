@@ -1110,6 +1110,110 @@ class TaskDelete(BaseModel):
     id: int
 
 
+# ----------------------------
+# Identities
+# ----------------------------
+class IdentityCreate(BaseModel):
+    type: str
+    label: str
+    fields: Optional[dict] = None
+
+
+class IdentityUpdate(BaseModel):
+    id: int
+    type: Optional[str] = None
+    label: Optional[str] = None
+    fields: Optional[dict] = None
+
+
+# ----------------------------
+# Contacts
+# ----------------------------
+class ContactCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    address: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ContactUpdate(BaseModel):
+    id: int
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    address: Optional[str] = None
+    note: Optional[str] = None
+
+
+# ----------------------------
+# WiFi
+# ----------------------------
+class WifiCreate(BaseModel):
+    label: str
+    ssid: str
+    password: Optional[str] = None
+    security: Optional[str] = "WPA"
+    hidden: Optional[bool] = False
+    location: Optional[str] = None
+
+
+class WifiUpdate(BaseModel):
+    id: int
+    label: Optional[str] = None
+    ssid: Optional[str] = None
+    password: Optional[str] = None
+    security: Optional[str] = None
+    hidden: Optional[bool] = None
+    location: Optional[str] = None
+
+
+# ----------------------------
+# Servers
+# ----------------------------
+class ServerCreate(BaseModel):
+    name: str
+    host: str
+    port: Optional[int] = 22
+    username: Optional[str] = None
+    password: Optional[str] = None
+    keyfile: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ServerUpdate(BaseModel):
+    id: int
+    name: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    keyfile: Optional[str] = None
+    note: Optional[str] = None
+
+
+# ----------------------------
+# Recovery phrases
+# ----------------------------
+class RecoveryCreate(BaseModel):
+    label: str
+    words: str
+    word_count: Optional[int] = 12
+
+
+class RecoveryUpdate(BaseModel):
+    id: int
+    label: Optional[str] = None
+    words: Optional[str] = None
+    word_count: Optional[int] = None
+
+
+class GenericDelete(BaseModel):
+    id: int
+
+
 class CategoryCreate(BaseModel):
     name: str
     icon: Optional[str] = "📁"
@@ -1582,6 +1686,424 @@ def delete_task(payload: TaskDelete, authorization: Optional[str] = Header(None)
         conn.execute("DELETE FROM user_tasks WHERE id = ?", (payload.id,))
         conn.commit()
         return {"message": "Task deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# IDENTITIES (passport / license / ID / address)
+# ================================
+@app.get("/identities")
+def list_identities(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, type, label, fields, created_at, updated_at FROM user_identities "
+            "WHERE user_id = ? ORDER BY created_at DESC", (user["id"],),
+        ).fetchall()
+        return {"identities": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/identities")
+def create_identity(payload: IdentityCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    label = payload.label.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Label is required.")
+    ct = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO user_identities (user_id, type, label, fields, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user["id"], payload.type, label, json.dumps(payload.fields or {}), ct, ct),
+        )
+        conn.commit()
+        return {"message": "Identity saved.", "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/identities")
+def update_identity(payload: IdentityUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_identities WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Identity not found.")
+        typ = payload.type if payload.type is not None else row["type"]
+        label = payload.label if payload.label is not None else row["label"]
+        fields = json.dumps(payload.fields) if payload.fields is not None else row["fields"]
+        conn.execute("UPDATE user_identities SET type=?, label=?, fields=?, updated_at=? WHERE id=?",
+                     (typ, label, fields, now_utc_str(), payload.id))
+        conn.commit()
+        return {"message": "Identity updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/identities")
+def delete_identity(payload: GenericDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_identities WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Identity not found.")
+        conn.execute("DELETE FROM user_identities WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Identity deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# CONTACTS
+# ================================
+@app.get("/contacts")
+def list_contacts(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, email, phone, company, address, note, created_at, updated_at "
+            "FROM user_contacts WHERE user_id = ? ORDER BY name COLLATE NOCASE", (user["id"],),
+        ).fetchall()
+        return {"contacts": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/contacts")
+def create_contact(payload: ContactCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required.")
+    ct = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO user_contacts (user_id, name, email, phone, company, address, note, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], name, payload.email, payload.phone, payload.company, payload.address, payload.note, ct, ct),
+        )
+        conn.commit()
+        return {"message": "Contact saved.", "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/contacts")
+def update_contact(payload: ContactUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_contacts WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Contact not found.")
+        def g(f):
+            v = getattr(payload, f)
+            return v if v is not None else row[f]
+        conn.execute(
+            "UPDATE user_contacts SET name=?, email=?, phone=?, company=?, address=?, note=?, updated_at=? WHERE id=?",
+            (g("name"), g("email"), g("phone"), g("company"), g("address"), g("note"), now_utc_str(), payload.id),
+        )
+        conn.commit()
+        return {"message": "Contact updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/contacts")
+def delete_contact(payload: GenericDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_contacts WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Contact not found.")
+        conn.execute("DELETE FROM user_contacts WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Contact deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# WIFI
+# ================================
+@app.get("/wifi")
+def list_wifi(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, label, ssid, password, security, hidden, location, created_at, updated_at "
+            "FROM user_wifi WHERE user_id = ? ORDER BY created_at DESC", (user["id"],),
+        ).fetchall()
+        return {"wifi": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/wifi")
+def create_wifi(payload: WifiCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    label = payload.label.strip()
+    ssid = payload.ssid.strip()
+    if not label or not ssid:
+        raise HTTPException(status_code=400, detail="Label and SSID are required.")
+    ct = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO user_wifi (user_id, label, ssid, password, security, hidden, location, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], label, ssid, payload.password, payload.security or "WPA",
+             1 if payload.hidden else 0, payload.location, ct, ct),
+        )
+        conn.commit()
+        return {"message": "WiFi saved.", "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/wifi")
+def update_wifi(payload: WifiUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_wifi WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="WiFi not found.")
+        label = payload.label if payload.label is not None else row["label"]
+        ssid = payload.ssid if payload.ssid is not None else row["ssid"]
+        password = payload.password if payload.password is not None else row["password"]
+        security = payload.security if payload.security is not None else row["security"]
+        hidden = 1 if payload.hidden else 0 if payload.hidden is not None else row["hidden"]
+        location = payload.location if payload.location is not None else row["location"]
+        conn.execute(
+            "UPDATE user_wifi SET label=?, ssid=?, password=?, security=?, hidden=?, location=?, updated_at=? WHERE id=?",
+            (label, ssid, password, security, hidden, location, now_utc_str(), payload.id),
+        )
+        conn.commit()
+        return {"message": "WiFi updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/wifi")
+def delete_wifi(payload: GenericDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_wifi WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="WiFi not found.")
+        conn.execute("DELETE FROM user_wifi WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "WiFi deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# SERVERS (SSH)
+# ================================
+@app.get("/servers")
+def list_servers(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, host, port, username, password, keyfile, note, created_at, updated_at "
+            "FROM user_servers WHERE user_id = ? ORDER BY created_at DESC", (user["id"],),
+        ).fetchall()
+        return {"servers": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/servers")
+def create_server(payload: ServerCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    name = payload.name.strip()
+    host = payload.host.strip()
+    if not name or not host:
+        raise HTTPException(status_code=400, detail="Name and host are required.")
+    ct = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO user_servers (user_id, name, host, port, username, password, keyfile, note, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], name, host, payload.port or 22, payload.username, payload.password, payload.keyfile, payload.note, ct, ct),
+        )
+        conn.commit()
+        return {"message": "Server saved.", "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/servers")
+def update_server(payload: ServerUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_servers WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Server not found.")
+        def g(f):
+            v = getattr(payload, f)
+            return v if v is not None else row[f]
+        port = payload.port if payload.port is not None else row["port"]
+        conn.execute(
+            "UPDATE user_servers SET name=?, host=?, port=?, username=?, password=?, keyfile=?, note=?, updated_at=? WHERE id=?",
+            (g("name"), g("host"), port, g("username"), g("password"), g("keyfile"), g("note"), now_utc_str(), payload.id),
+        )
+        conn.commit()
+        return {"message": "Server updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/servers")
+def delete_server(payload: GenericDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_servers WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Server not found.")
+        conn.execute("DELETE FROM user_servers WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Server deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# RECOVERY PHRASES
+# ================================
+@app.get("/recovery")
+def list_recovery(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, label, words, word_count, created_at, updated_at "
+            "FROM user_recovery WHERE user_id = ? ORDER BY created_at DESC", (user["id"],),
+        ).fetchall()
+        return {"recovery": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/recovery")
+def create_recovery(payload: RecoveryCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    label = payload.label.strip()
+    words = payload.words.strip()
+    if not label or not words:
+        raise HTTPException(status_code=400, detail="Label and words are required.")
+    ct = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO user_recovery (user_id, label, words, word_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user["id"], label, words, payload.word_count or 12, ct, ct),
+        )
+        conn.commit()
+        return {"message": "Recovery phrase saved.", "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/recovery")
+def update_recovery(payload: RecoveryUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_recovery WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Recovery phrase not found.")
+        label = payload.label if payload.label is not None else row["label"]
+        words = payload.words if payload.words is not None else row["words"]
+        wc = payload.word_count if payload.word_count is not None else row["word_count"]
+        conn.execute("UPDATE user_recovery SET label=?, words=?, word_count=?, updated_at=? WHERE id=?",
+                     (label, words, wc, now_utc_str(), payload.id))
+        conn.commit()
+        return {"message": "Recovery phrase updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/recovery")
+def delete_recovery(payload: GenericDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_recovery WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Recovery phrase not found.")
+        conn.execute("DELETE FROM user_recovery WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Recovery phrase deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# QR CODE GENERATOR (for WiFi / anything)
+# ================================
+@app.get("/qr")
+def make_qr(text: str, authorization: Optional[str] = Header(None)):
+    _ = authorization
+    qr = qrcode.QRCode(version=1, box_size=8, border=2)
+    qr.add_data(text or "")
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    qr_b64 = base64.b64encode(buffer.getvalue()).decode()
+    return {"qr": f"data:image/png;base64,{qr_b64}"}
+
+
+# ================================
+# GLOBAL SEARCH
+# ================================
+@app.get("/search")
+def global_search(q: str, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    term = "%" + (q or "").strip().lower() + "%"
+    if not (q or "").strip():
+        return {"results": []}
+    conn = get_db_connection()
+    out = []
+    try:
+        def run(kind, sql, cols):
+            try:
+                rows = conn.execute(sql, [user["id"]] + [term] * cols).fetchall()
+                for r in rows:
+                    out.append({"kind": kind, "id": r["id"], "title": r["title"], "sub": r["sub"]})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("search %s failed: %s", kind, exc)
+
+        run("vault", "SELECT id, label AS title, value AS sub FROM vault_entries WHERE user_id = ? AND (LOWER(label) LIKE ? OR LOWER(value) LIKE ?)", 2)
+        run("card", "SELECT id, label AS title, holder AS sub FROM user_cards WHERE user_id = ? AND (LOWER(label) LIKE ? OR LOWER(holder) LIKE ?)", 2)
+        run("note", "SELECT id, title AS title, substr(content,1,60) AS sub FROM user_notes WHERE user_id = ? AND (LOWER(title) LIKE ? OR LOWER(content) LIKE ?)", 2)
+        run("bookmark", "SELECT id, title AS title, url AS sub FROM user_bookmarks WHERE user_id = ? AND (LOWER(title) LIKE ? OR LOWER(url) LIKE ?)", 2)
+        run("task", "SELECT id, title AS title, '' AS sub FROM user_tasks WHERE user_id = ? AND LOWER(title) LIKE ?", 1)
+        run("contact", "SELECT id, name AS title, COALESCE(email,'') AS sub FROM user_contacts WHERE user_id = ? AND (LOWER(name) LIKE ? OR LOWER(COALESCE(email,'')) LIKE ? OR LOWER(COALESCE(phone,'')) LIKE ?)", 3)
+        run("identity", "SELECT id, label AS title, type AS sub FROM user_identities WHERE user_id = ? AND (LOWER(label) LIKE ? OR LOWER(type) LIKE ?)", 2)
+        run("wifi", "SELECT id, label AS title, ssid AS sub FROM user_wifi WHERE user_id = ? AND (LOWER(label) LIKE ? OR LOWER(ssid) LIKE ?)", 2)
+        run("server", "SELECT id, name AS title, host AS sub FROM user_servers WHERE user_id = ? AND (LOWER(name) LIKE ? OR LOWER(host) LIKE ?)", 2)
+        run("recovery", "SELECT id, label AS title, '' AS sub FROM user_recovery WHERE user_id = ? AND LOWER(label) LIKE ?", 1)
+        return {"results": out[:30]}
     finally:
         conn.close()
 

@@ -472,7 +472,7 @@ async function loadDashboard() {
   //    use the buttons and retry. Don't collapse the whole UI on a section
   //    failure, and never clear the token here.
   try {
-    await Promise.all([loadVault(), loadCards(), loadNotes(), loadBookmarks(), loadTasks()]);
+    await Promise.all([loadVault(), loadCards(), loadNotes(), loadBookmarks(), loadTasks(), loadIdentities(), loadContacts(), loadWifi(), loadServers(), loadRecovery()]);
   } catch (err) {
     console.error("Section load error (non-fatal):", err);
   }
@@ -930,6 +930,292 @@ async function deleteTask(id) {
   catch (err) { toast(err.message, "error"); }
 }
 
+/* ==================== IDENTITIES ==================== */
+let editingIdentityId = null;
+function showIdentityForm() { document.getElementById("identityForm").classList.remove("hidden"); document.getElementById("btnAddIdentity").onclick = hideIdentityForm; document.getElementById("btnAddIdentity").textContent = "➖ Hide"; }
+function hideIdentityForm() { document.getElementById("identityForm").classList.add("hidden"); document.getElementById("btnAddIdentity").onclick = showIdentityForm; document.getElementById("btnAddIdentity").textContent = "＋ Add ID"; ["identityType","identityLabel","identityFields"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); editingIdentityId = null; }
+
+function _parseIdentityFields(text) {
+  const obj = {};
+  (text || "").split("\n").forEach(line => {
+    const idx = line.indexOf(":");
+    if (idx > 0) obj[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+    else if (line.trim()) obj["Line " + (Object.keys(obj).length + 1)] = line.trim();
+  });
+  return obj;
+}
+function _fmtIdentityFields(fields) {
+  try { const o = typeof fields === "string" ? JSON.parse(fields) : fields; return Object.entries(o || {}).map(([k, v]) => escapeHtml(k) + ": <b>" + escapeHtml(v) + "</b>").join("<br>"); }
+  catch (e) { return escapeHtml(String(fields || "")); }
+}
+
+async function saveIdentity() {
+  const type = document.getElementById("identityType").value;
+  const label = document.getElementById("identityLabel").value.trim();
+  const fields = _parseIdentityFields(document.getElementById("identityFields").value);
+  if (!label) { toast("Label is required!", "error"); return; }
+  try {
+    if (editingIdentityId) { await api("/identities", "PUT", { id: editingIdentityId, type, label, fields }, true); toast("Identity updated! 🪪", "success"); }
+    else { await api("/identities", "POST", { type, label, fields }, true); toast("Identity saved! 🪪", "success"); }
+    hideIdentityForm(); await loadIdentities();
+  } catch (err) { toast(err.message, "error"); }
+}
+async function loadIdentities() {
+  const list = document.getElementById("identitiesList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  try {
+    const data = await api("/identities", "GET", null, true);
+    if (!data.identities || !data.identities.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🪪</div><p>No identities saved</p><small>Add a passport, licence or ID</small></div>`; return; }
+    const icons = { passport: "🛂", national_id: "🪪", license: "🚗", address: "🏠", tax: "🧾", other: "📄" };
+    list.innerHTML = data.identities.map(it => `
+      <div class="vault-item">
+        <div class="vault-info"><div class="vault-icon">${icons[it.type] || "📄"}</div>
+          <div class="vault-details"><h4>${escapeHtml(it.label)}</h4><p>${_fmtIdentityFields(it.fields)}</p></div></div>
+        <div class="vault-actions">
+          <button class="vault-btn delete" onclick="deleteIdentity(${it.id})">🗑️</button>
+        </div>
+      </div>`).join("");
+  } catch (err) { toast("Could not load identities: " + err.message, "error"); }
+}
+async function deleteIdentity(id) {
+  if (!confirm("Delete this identity?")) return;
+  try { await api("/identities", "DELETE", { id }, true); toast("Identity deleted!", "success"); await loadIdentities(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== CONTACTS ==================== */
+function showContactForm() { document.getElementById("contactForm").classList.remove("hidden"); document.getElementById("btnAddContact").onclick = hideContactForm; document.getElementById("btnAddContact").textContent = "➖ Hide"; }
+function hideContactForm() { document.getElementById("contactForm").classList.add("hidden"); document.getElementById("btnAddContact").onclick = showContactForm; document.getElementById("btnAddContact").textContent = "＋ Add contact"; ["contactName","contactCompany","contactEmail","contactPhone","contactAddress","contactNote"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+async function saveContact() {
+  const name = document.getElementById("contactName").value.trim();
+  if (!name) { toast("Name is required!", "error"); return; }
+  const payload = {
+    name, company: document.getElementById("contactCompany").value.trim(),
+    email: document.getElementById("contactEmail").value.trim(), phone: document.getElementById("contactPhone").value.trim(),
+    address: document.getElementById("contactAddress").value.trim(), note: document.getElementById("contactNote").value.trim(),
+  };
+  try { await api("/contacts", "POST", payload, true); toast("Contact saved! 👥", "success"); hideContactForm(); await loadContacts(); }
+  catch (err) { toast(err.message, "error"); }
+}
+async function loadContacts() {
+  const list = document.getElementById("contactsList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  try {
+    const data = await api("/contacts", "GET", null, true);
+    if (!data.contacts || !data.contacts.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><p>No contacts yet</p><small>Add people you want to keep close</small></div>`; return; }
+    list.innerHTML = data.contacts.map(c => `
+      <div class="vault-item">
+        <div class="vault-info"><div class="vault-icon">${(c.name||"?").charAt(0).toUpperCase()}</div>
+          <div class="vault-details"><h4>${escapeHtml(c.name)}</h4>
+            <p>${c.email ? "✉️ " + escapeHtml(c.email) + " " : ""}${c.phone ? "📞 " + escapeHtml(c.phone) : ""}${c.company ? " · " + escapeHtml(c.company) : ""}</p></div></div>
+        <div class="vault-actions">
+          ${c.phone ? `<button class="vault-btn" onclick='copyText(${JSON.stringify(c.phone)})'>📋</button>` : ""}
+          <button class="vault-btn delete" onclick="deleteContact(${c.id})">🗑️</button>
+        </div>
+      </div>`).join("");
+  } catch (err) { toast("Could not load contacts: " + err.message, "error"); }
+}
+async function deleteContact(id) {
+  if (!confirm("Delete this contact?")) return;
+  try { await api("/contacts", "DELETE", { id }, true); toast("Contact deleted!", "success"); await loadContacts(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== WIFI ==================== */
+function showWifiForm() { document.getElementById("wifiForm").classList.remove("hidden"); document.getElementById("btnAddWifi").onclick = hideWifiForm; document.getElementById("btnAddWifi").textContent = "➖ Hide"; }
+function hideWifiForm() { document.getElementById("wifiForm").classList.add("hidden"); document.getElementById("btnAddWifi").onclick = showWifiForm; document.getElementById("btnAddWifi").textContent = "＋ Add WiFi"; ["wifiLabel","wifiSsid","wifiPassword","wifiLocation"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+function _wifiString(w) { return "WIFI:T:" + (w.security || "WPA") + ";S:" + (w.ssid || "") + ";P:" + (w.password || "") + ";;"; }
+async function saveWifi() {
+  const label = document.getElementById("wifiLabel").value.trim();
+  const ssid = document.getElementById("wifiSsid").value.trim();
+  if (!label || !ssid) { toast("Label and SSID are required!", "error"); return; }
+  const payload = { label, ssid, password: document.getElementById("wifiPassword").value, security: document.getElementById("wifiSecurity").value, location: document.getElementById("wifiLocation").value.trim() };
+  try { await api("/wifi", "POST", payload, true); toast("WiFi saved! 📶", "success"); hideWifiForm(); await loadWifi(); }
+  catch (err) { toast(err.message, "error"); }
+}
+async function loadWifi() {
+  const list = document.getElementById("wifiList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  try {
+    const data = await api("/wifi", "GET", null, true);
+    if (!data.wifi || !data.wifi.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">📶</div><p>No WiFi networks saved</p><small>Add a network and generate a QR to share</small></div>`; return; }
+    list.innerHTML = data.wifi.map(w => `
+      <div class="vault-item">
+        <div class="vault-info"><div class="vault-icon">📶</div>
+          <div class="vault-details"><h4>${escapeHtml(w.label)} · ${escapeHtml(w.ssid)}</h4>
+            <p>${w.password ? "🔑 " + escapeHtml(w.password) : "Open network"}${w.location ? " · 📍 " + escapeHtml(w.location) : ""}</p></div></div>
+        <div class="vault-actions">
+          <button class="vault-btn" onclick='showWifiQr(${JSON.stringify(_wifiString(w))}, ${JSON.stringify(w.ssid)})'>📱 QR</button>
+          ${w.password ? `<button class="vault-btn" onclick='copyText(${JSON.stringify(w.password)})'>📋</button>` : ""}
+          <button class="vault-btn delete" onclick="deleteWifi(${w.id})">🗑️</button>
+        </div>
+      </div>`).join("");
+  } catch (err) { toast("Could not load WiFi: " + err.message, "error"); }
+}
+async function deleteWifi(id) {
+  if (!confirm("Delete this WiFi network?")) return;
+  try { await api("/wifi", "DELETE", { id }, true); toast("WiFi deleted!", "success"); await loadWifi(); }
+  catch (err) { toast(err.message, "error"); }
+}
+async function showWifiQr(text, name) {
+  try {
+    const data = await api("/qr?q=" + encodeURIComponent(text), "GET", null, true);
+    const html = `<div class="qr-overlay" id="qrOverlay" onclick="document.getElementById('qrOverlay').remove()">
+      <div class="qr-box" onclick="event.stopPropagation()">
+        <button class="qr-close" onclick="document.getElementById('qrOverlay').remove()">✕</button>
+        <img src="${data.qr}" alt="QR for ${escapeHtml(name)}">
+        <h4>${escapeHtml(name)}</h4>
+        <p>Scan to join this WiFi network</p>
+      </div></div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== SERVERS ==================== */
+function showServerForm() { document.getElementById("serverForm").classList.remove("hidden"); document.getElementById("btnAddServer").onclick = hideServerForm; document.getElementById("btnAddServer").textContent = "➖ Hide"; }
+function hideServerForm() { document.getElementById("serverForm").classList.add("hidden"); document.getElementById("btnAddServer").onclick = showServerForm; document.getElementById("btnAddServer").textContent = "＋ Add server"; ["serverName","serverHost","serverPort","serverUsername","serverPassword","serverNote"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+async function saveServer() {
+  const name = document.getElementById("serverName").value.trim();
+  const host = document.getElementById("serverHost").value.trim();
+  if (!name || !host) { toast("Name and host are required!", "error"); return; }
+  const payload = { name, host, port: parseInt(document.getElementById("serverPort").value || "22", 10), username: document.getElementById("serverUsername").value.trim(), password: document.getElementById("serverPassword").value, note: document.getElementById("serverNote").value };
+  try { await api("/servers", "POST", payload, true); toast("Server saved! 🖥️", "success"); hideServerForm(); await loadServers(); }
+  catch (err) { toast(err.message, "error"); }
+}
+async function loadServers() {
+  const list = document.getElementById("serversList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  try {
+    const data = await api("/servers", "GET", null, true);
+    if (!data.servers || !data.servers.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🖥️</div><p>No servers saved</p><small>Store SSH / host credentials</small></div>`; return; }
+    list.innerHTML = data.servers.map(s => `
+      <div class="vault-item">
+        <div class="vault-info"><div class="vault-icon">🖥️</div>
+          <div class="vault-details"><h4>${escapeHtml(s.name)}</h4>
+            <p>${escapeHtml(s.username || "user")}@${escapeHtml(s.host)}:${s.port || 22}</p></div></div>
+        <div class="vault-actions">
+          <button class="vault-btn" onclick='copyText(${JSON.stringify("ssh " + (s.username||"") + "@" + s.host + " -p " + (s.port||22))})'>📋</button>
+          ${s.password ? `<button class="vault-btn" onclick='copyText(${JSON.stringify(s.password)})'>🔑</button>` : ""}
+          <button class="vault-btn delete" onclick="deleteServer(${s.id})">🗑️</button>
+        </div>
+      </div>`).join("");
+  } catch (err) { toast("Could not load servers: " + err.message, "error"); }
+}
+async function deleteServer(id) {
+  if (!confirm("Delete this server?")) return;
+  try { await api("/servers", "DELETE", { id }, true); toast("Server deleted!", "success"); await loadServers(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== RECOVERY PHRASES ==================== */
+function showRecoveryForm() { document.getElementById("recoveryForm").classList.remove("hidden"); document.getElementById("btnAddRecovery").onclick = hideRecoveryForm; document.getElementById("btnAddRecovery").textContent = "➖ Hide"; }
+function hideRecoveryForm() { document.getElementById("recoveryForm").classList.add("hidden"); document.getElementById("btnAddRecovery").onclick = showRecoveryForm; document.getElementById("btnAddRecovery").textContent = "＋ Add phrase"; ["recoveryLabel","recoveryWords"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+async function saveRecovery() {
+  const label = document.getElementById("recoveryLabel").value.trim();
+  const words = document.getElementById("recoveryWords").value.trim();
+  if (!label || !words) { toast("Label and words are required!", "error"); return; }
+  const wc = words.split(/\s+/).length;
+  try { await api("/recovery", "POST", { label, words, word_count: wc }, true); toast("Recovery phrase saved! 🌱", "success"); hideRecoveryForm(); await loadRecovery(); }
+  catch (err) { toast(err.message, "error"); }
+}
+async function loadRecovery() {
+  const list = document.getElementById("recoveryList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
+  try {
+    const data = await api("/recovery", "GET", null, true);
+    if (!data.recovery || !data.recovery.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🌱</div><p>No recovery phrases saved</p><small>Store crypto seed phrases securely</small></div>`; return; }
+    list.innerHTML = data.recovery.map(r => `
+      <div class="vault-item">
+        <div class="vault-info"><div class="vault-icon">🌱</div>
+          <div class="vault-details"><h4>${escapeHtml(r.label)}</h4>
+            <p class="recovery-hidden mono" id="rec-${r.id}">•••• •••• •••• (${r.word_count} words)</p></div></div>
+        <div class="vault-actions">
+          <button class="vault-btn" onclick='revealRecovery(${r.id}, ${JSON.stringify(r.words)})'>👁️</button>
+          <button class="vault-btn" onclick='copyText(${JSON.stringify(r.words)})'>📋</button>
+          <button class="vault-btn delete" onclick="deleteRecovery(${r.id})">🗑️</button>
+        </div>
+      </div>`).join("");
+  } catch (err) { toast("Could not load recovery phrases: " + err.message, "error"); }
+}
+function revealRecovery(id, words) {
+  const el = document.getElementById("rec-" + id);
+  if (!el) return;
+  if (el.dataset.shown === "1") { el.dataset.shown = "0"; el.textContent = "•••• •••• ••••"; el.classList.add("recovery-hidden"); return; }
+  el.dataset.shown = "1"; el.textContent = words; el.classList.remove("recovery-hidden");
+}
+async function deleteRecovery(id) {
+  if (!confirm("Permanently delete this recovery phrase?")) return;
+  try { await api("/recovery", "DELETE", { id }, true); toast("Recovery phrase deleted!", "success"); await loadRecovery(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== HELPERS ==================== */
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t || ""); toast("Copied! 📋", "success"); }
+  catch (e) { toast("Copy failed", "error"); }
+}
+
+/* ==================== COMMAND PALETTE / SEARCH ==================== */
+const _KIND_META = {
+  vault: ["🔐", "vault"], card: ["💳", "cards"], note: ["📝", "notes"], bookmark: ["🔖", "bookmarks"],
+  task: ["✅", "tasks"], contact: ["👥", "contacts"], identity: ["🪪", "identities"],
+  wifi: ["📶", "wifi"], server: ["🖥️", "servers"], recovery: ["🌱", "recovery"],
+};
+let _cmdTimer = null, _cmdResults = [], _cmdIndex = -1;
+
+function openCommandPalette() {
+  document.getElementById("cmdOverlay").classList.remove("hidden");
+  const inp = document.getElementById("cmdInput");
+  inp.value = ""; inp.focus();
+  document.getElementById("cmdResults").innerHTML = `<div class="cmd-empty">Start typing to search everything you've saved…</div>`;
+  _cmdResults = [];
+}
+function closeCommandPalette() { document.getElementById("cmdOverlay").classList.add("hidden"); }
+
+async function runCommandSearch(q) {
+  if (!q.trim()) { document.getElementById("cmdResults").innerHTML = `<div class="cmd-empty">Start typing to search everything you've saved…</div>`; _cmdResults = []; return; }
+  try {
+    const data = await api("/search?q=" + encodeURIComponent(q), "GET", null, true);
+    _cmdResults = data.results || [];
+    _cmdIndex = -1;
+    renderCommandResults();
+  } catch (err) { document.getElementById("cmdResults").innerHTML = `<div class="cmd-empty">Search failed: ${escapeHtml(err.message)}</div>`; }
+}
+function renderCommandResults() {
+  const box = document.getElementById("cmdResults");
+  if (!_cmdResults.length) { box.innerHTML = `<div class="cmd-empty">No results</div>`; return; }
+  box.innerHTML = _cmdResults.map((r, i) => {
+    const meta = _KIND_META[r.kind] || ["📄", "overview"];
+    return `<div class="cmd-item ${i === _cmdIndex ? "sel" : ""}" data-i="${i}" onclick="openSearchResult(${i})">
+      <span class="cmd-ic">${meta[0]}</span>
+      <div class="cmd-text"><div class="cmd-title">${escapeHtml(r.title)}</div>${r.sub ? `<div class="cmd-sub">${escapeHtml(r.sub)}</div>` : ""}</div>
+      <span class="cmd-kind">${r.kind}</span>
+    </div>`;
+  }).join("");
+}
+function openSearchResult(i) {
+  const r = _cmdResults[i];
+  if (!r) return;
+  const tab = (_KIND_META[r.kind] || ["", "overview"])[1];
+  closeCommandPalette();
+  switchTab(tab);
+}
+
+/* ==================== THEME ==================== */
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const ic = document.getElementById("themeIcon");
+  if (ic) ic.textContent = theme === "light" ? "☀️" : "🌙";
+  try { localStorage.setItem("ahad_theme", theme); } catch (e) {}
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+  applyTheme(cur === "light" ? "dark" : "light");
+}
+(function initTheme() {
+  try { applyTheme(localStorage.getItem("ahad_theme") || "dark"); } catch (e) { applyTheme("dark"); }
+})();
+
 /* ==================== PROFILE ==================== */
 async function saveProfile() {
   const phone = document.getElementById("profilePhone").value.trim();
@@ -1066,6 +1352,16 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnAddVault) btnAddVault.addEventListener("click", showVaultForm);
   const btnAddCard = document.getElementById("btnAddCard");
   if (btnAddCard) btnAddCard.addEventListener("click", showCardForm);
+  const btnAddIdentity = document.getElementById("btnAddIdentity");
+  if (btnAddIdentity) btnAddIdentity.addEventListener("click", showIdentityForm);
+  const btnAddContact = document.getElementById("btnAddContact");
+  if (btnAddContact) btnAddContact.addEventListener("click", showContactForm);
+  const btnAddWifi = document.getElementById("btnAddWifi");
+  if (btnAddWifi) btnAddWifi.addEventListener("click", showWifiForm);
+  const btnAddServer = document.getElementById("btnAddServer");
+  if (btnAddServer) btnAddServer.addEventListener("click", showServerForm);
+  const btnAddRecovery = document.getElementById("btnAddRecovery");
+  if (btnAddRecovery) btnAddRecovery.addEventListener("click", showRecoveryForm);
   const btnAddNote = document.getElementById("btnAddNote");
   if (btnAddNote) btnAddNote.addEventListener("click", showNoteForm);
   const btnAddBookmark = document.getElementById("btnAddBookmark");
@@ -1132,6 +1428,41 @@ document.addEventListener("DOMContentLoaded", () => {
   if (moreOverlay) moreOverlay.addEventListener("click", closeMoreSheet);
   const bnLogout = document.getElementById("bnLogout");
   if (bnLogout) bnLogout.addEventListener("click", () => document.getElementById("btnLogout").click());
+  // Mobile search button in bottom nav
+  const bnSearch = document.getElementById("bnSearch");
+  if (bnSearch) bnSearch.addEventListener("click", openCommandPalette);
+
+  // Command palette wiring (Ctrl/Cmd+K, button, overlay, keyboard)
+  const cmdBtn = document.getElementById("cmdBtn");
+  if (cmdBtn) cmdBtn.addEventListener("click", openCommandPalette);
+  const cmdOverlay = document.getElementById("cmdOverlay");
+  if (cmdOverlay) cmdOverlay.addEventListener("click", (e) => { if (e.target === cmdOverlay) closeCommandPalette(); });
+  const cmdInput = document.getElementById("cmdInput");
+  if (cmdInput) {
+    cmdInput.addEventListener("input", (e) => {
+      clearTimeout(_cmdTimer);
+      _cmdTimer = setTimeout(() => runCommandSearch(e.target.value), 220);
+    });
+    cmdInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { closeCommandPalette(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); if (_cmdIndex < _cmdResults.length - 1) { _cmdIndex++; renderCommandResults(); } }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (_cmdIndex > 0) { _cmdIndex--; renderCommandResults(); } }
+      else if (e.key === "Enter") { e.preventDefault(); if (_cmdIndex >= 0) openSearchResult(_cmdIndex); else if (_cmdResults.length) openSearchResult(0); }
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      if (document.getElementById("screen-dashboard").classList.contains("hidden")) return;
+      if (cmdOverlay.classList.contains("hidden")) openCommandPalette(); else closeCommandPalette();
+    } else if (e.key === "Escape" && cmdOverlay && !cmdOverlay.classList.contains("hidden")) {
+      closeCommandPalette();
+    }
+  });
+
+  // Theme toggle wiring
+  const themeBtn = document.getElementById("themeBtn");
+  if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
 
   // Reveal-on-scroll (Stripe-style entrance animations)
   const revealEls = document.querySelectorAll(".reveal");
