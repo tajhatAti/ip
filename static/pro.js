@@ -17,7 +17,8 @@ let selectedNoteColor = "#6366f1";
 
 /* ---------------- SCREEN NAV ---------------- */
 function showScreen(id) {
-  document.querySelectorAll(".hero, .features, .pricing, .footer, .auth-container, .dashboard, .navbar").forEach(el => {
+  // Hide all top-level screens (new class names: nav/hero/section/foot/auth/dashboard)
+  document.querySelectorAll(".nav, .hero, .section, .foot, .auth, .dashboard").forEach(el => {
     el.classList.add("hidden");
     el.style.display = "none";
   });
@@ -27,11 +28,11 @@ function showScreen(id) {
       const el = document.querySelector(sel);
       if (el) { el.classList.remove("hidden"); el.style.display = ""; }
     };
-    show(".navbar");
+    show(".nav");
     show("#screen-landing");
-    show(".features");
-    show(".pricing");
-    show(".footer");
+    document.querySelectorAll(".section").forEach(s => { s.classList.remove("hidden"); s.style.display = ""; });
+    show(".foot");
+    window.scrollTo({ top: 0 });
     return;
   }
 
@@ -57,10 +58,93 @@ function toast(message, type = "success") {
   const container = document.getElementById("toastContainer");
   const el = document.createElement("div");
   el.className = `toast ${type}`;
-  const icons = { success: "✓", error: "✕", warning: "⚠" };
+  const icons = { success: "✓", error: "✕", warning: "⚠", info: "ℹ" };
   el.innerHTML = `<span>${icons[type] || ""}</span> ${message}`;
   container.appendChild(el);
   setTimeout(() => el.remove(), 4000);
+}
+
+/* ---------------- ACTIVITY LOG ---------------- */
+// A live, client-side feed of account/security events (kept in localStorage so
+// it survives reloads). Mirrors what a user would expect to see on a site like
+// GitHub's security log: "verification email sent", "wrong OTP", "sign-in
+// successful", "username already taken", etc.
+const ACTIVITY_KEY = "ahad_activity_log";
+const ACTIVITY_MAX = 60;
+
+function _loadActivity() {
+  try { return JSON.parse(localStorage.getItem(ACTIVITY_KEY) || "[]"); }
+  catch (e) { return []; }
+}
+
+function _saveActivity(list) {
+  try { localStorage.setItem(ACTIVITY_KEY, JSON.stringify(list.slice(0, ACTIVITY_MAX))); }
+  catch (e) {}
+}
+
+function logEvent(type, title, meta) {
+  // type: success | error | info | warning
+  const entry = {
+    type: type || "info",
+    title: title || "Event",
+    meta: meta || "",
+    ts: new Date().toISOString(),
+  };
+  const list = _loadActivity();
+  list.unshift(entry);
+  _saveActivity(list);
+  renderActivity();
+  // Pulse the bell dot to signal a new event.
+  const dot = document.getElementById("bellDot");
+  if (dot) dot.classList.remove("hidden");
+}
+
+function _activityIcon(t) {
+  return ({ success: "✓", error: "✕", warning: "⚠", info: "ℹ" })[t] || "•";
+}
+
+function _fmtTime(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch (e) { return ""; }
+}
+
+function renderActivity() {
+  const list = _loadActivity();
+  const box = document.getElementById("activityList");
+  if (!box) return;
+  if (!list.length) {
+    box.innerHTML = `<div class="ap-empty">No activity yet. Events like sign-ups, OTP, and logins will appear here in real time.</div>`;
+    return;
+  }
+  box.innerHTML = list.map(e => `
+    <div class="ap-item">
+      <div class="ap-ic ${e.type}">${_activityIcon(e.type)}</div>
+      <div class="ap-body">
+        <div class="ap-title">${escapeHtml(e.title)}</div>
+        ${e.meta ? `<div class="ap-meta">${escapeHtml(e.meta)}</div>` : ""}
+        <div class="ap-meta">${_fmtTime(e.ts)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function openActivityPanel() {
+  const p = document.getElementById("activityPanel");
+  const o = document.getElementById("activityOverlay");
+  if (p) p.classList.add("open");
+  if (o) o.classList.remove("hidden");
+  renderActivity();
+  const dot = document.getElementById("bellDot");
+  if (dot) dot.classList.add("hidden"); // ack viewed
+}
+
+function closeActivityPanel() {
+  const p = document.getElementById("activityPanel");
+  const o = document.getElementById("activityOverlay");
+  if (p) p.classList.remove("open");
+  if (o) o.classList.add("hidden");
 }
 
 /* ---------------- API HELPER ---------------- */
@@ -183,15 +267,20 @@ async function handleSignup(e) {
   if (username.length < 3) { toast("Username must be at least 3 characters", "error"); return; }
   setLoading(btn, true);
   try {
-    await api("/signup", "POST", { username, email, password });
+    const res = await api("/signup", "POST", { username, email, password });
     signupUsername = username;
     localStorage.setItem("ahad_signup_username", username);
+    localStorage.setItem("ahad_signup_email", email);
     clearOtpBoxes("otpBoxesSignup");
-    document.getElementById("otpEmailNote").textContent = `Code sent to ${email}`;
+    document.getElementById("otpEmailNote").textContent = `A 6-digit code was sent to ${email}. It's valid for 10 minutes — you can switch apps to check your mail safely.`;
     showScreen("screen-otp");
     startResendTimer(45);
-    toast("Verification code sent! Check your email.", "success");
-  } catch (err) { toast(err.message, "error"); }
+    logEvent("success", "Verification email sent", `Code sent to ${email}`);
+    toast(res.resent ? "Welcome back — a fresh code was sent to your email." : "Verification code sent! Check your email.", "success");
+  } catch (err) {
+    logEvent("error", "Sign-up failed", err.message);
+    toast(err.message, "error");
+  }
   finally { setLoading(btn, false); }
 }
 
@@ -210,24 +299,33 @@ document.getElementById("btnVerify").addEventListener("click", async () => {
     authToken = data.token;
     localStorage.setItem("ahad_token", authToken);
     localStorage.removeItem("ahad_signup_username");
+    localStorage.removeItem("ahad_signup_email");
     signupUsername = "";
     // Clear the signup form + OTP so the entered email/username never lingers.
     clearOtpBoxes("otpBoxesSignup");
     document.getElementById("su_username").value = "";
     document.getElementById("su_email").value = "";
     document.getElementById("su_password").value = "";
+    logEvent("success", "Email verified", `Account confirmed: ${username}`);
     toast("Email verified! Welcome! 🎉", "success");
     await loadDashboard();
     showScreen("screen-dashboard");
-  } catch (err) { toast(err.message, "error"); }
+  } catch (err) {
+    logEvent("error", "Wrong / invalid OTP", err.message);
+    toast(err.message, "error");
+  }
   finally { setLoading(btn, false); }
 });
 
 document.getElementById("resendLink").addEventListener("click", async () => {
   const username = signupUsername || localStorage.getItem("ahad_signup_username");
   if (!username) { toast("Username not found.", "error"); showScreen("screen-signup"); return; }
-  try { await api("/resend-otp", "POST", { username }); toast("New code sent!", "success"); startResendTimer(45); }
-  catch (err) { toast(err.message, "error"); }
+  try {
+    await api("/resend-otp", "POST", { username });
+    logEvent("info", "New code requested", `Resent OTP to ${username}`);
+    toast("New code sent!", "success"); startResendTimer(45);
+  }
+  catch (err) { logEvent("error", "Resend failed", err.message); toast(err.message, "error"); }
 });
 
 /* ==================== SIGNIN ==================== */
@@ -239,15 +337,32 @@ async function handleSignin(e) {
   setLoading(btn, true);
   try {
     const data = await api("/login", "POST", { username, password });
+    // Backend routes unverified accounts to verification instead of erroring.
+    if (data.need_verify) {
+      signupUsername = data.username;
+      localStorage.setItem("ahad_signup_username", data.username);
+      clearOtpBoxes("otpBoxesSignup");
+      document.getElementById("otpEmailNote").textContent =
+        "Your email isn't verified yet. Enter the 6-digit code, or resend a new one below.";
+      showScreen("screen-otp");
+      startResendTimer(10);
+      logEvent("warning", "Verification required", `Please verify ${data.username}`);
+      toast("Please verify your email to continue.", "warning");
+      return;
+    }
     authToken = data.token;
     localStorage.setItem("ahad_token", authToken);
     // Clear the form so the entered username/password never lingers (e.g. via bfcache Back).
     document.getElementById("si_username").value = "";
     document.getElementById("si_password").value = "";
+    logEvent("success", "Sign-in successful", `Welcome back, ${data.username}`);
     toast("Welcome back!", "success");
     await loadDashboard();
     showScreen("screen-dashboard");
-  } catch (err) { toast(err.message, "error"); }
+  } catch (err) {
+    logEvent("error", "Sign-in failed", err.message);
+    toast(err.message, "error");
+  }
   finally { setLoading(btn, false); }
 }
 
@@ -695,6 +810,9 @@ function reconcileScreen() {
     authToken = localStorage.getItem("ahad_token");
     showScreen("screen-dashboard");
     loadDashboard().catch(() => { /* loadDashboard handles its own errors */ });
+  } else if (localStorage.getItem("ahad_signup_username")) {
+    // A verification was in progress — keep them on the OTP screen.
+    restoreOtpScreen();
   } else {
     authToken = null;
     showScreen("screen-landing");
@@ -716,6 +834,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Logout
   document.getElementById("btnLogout").addEventListener("click", async () => {
     try { await api("/logout", "POST", null, true); } catch (e) {}
+    logEvent("info", "Signed out", "Session ended");
     authToken = null;
     localStorage.removeItem("ahad_token");
     toast("Logged out", "success");
@@ -768,13 +887,31 @@ document.addEventListener("DOMContentLoaded", () => {
     if (b.textContent.includes("Delete Account")) b.addEventListener("click", e => { e.preventDefault(); deleteAccount(); });
   });
 
-  // Boot: decide the screen SYNCHRONOUSLY so the user never sees a flash of
-  // the wrong screen (e.g. landing/Sign-in for ~1-2s before the dashboard).
+  // ---- Activity log panel wiring ----
+  const bell = document.getElementById("activityBell");
+  if (bell) bell.addEventListener("click", openActivityPanel);
+  const apClose = document.getElementById("activityClose");
+  if (apClose) apClose.addEventListener("click", closeActivityPanel);
+  const apOverlay = document.getElementById("activityOverlay");
+  if (apOverlay) apOverlay.addEventListener("click", closeActivityPanel);
+  const apClear = document.getElementById("activityClear");
+  if (apClear) apClear.addEventListener("click", () => {
+    _saveActivity([]); renderActivity(); toast("Activity log cleared", "info");
+  });
+  renderActivity(); // draw any persisted events immediately
+
+  // ---- OTP "Paste from clipboard" button ----
+  const otpPasteBtn = document.getElementById("otpPasteBtn");
+  if (otpPasteBtn) otpPasteBtn.addEventListener("click", pasteOtp);
+
+  // ---- Boot: decide the screen SYNCHRONOUSLY (no flash) ----
   if (authToken) {
-    // Show the dashboard immediately (optimistic); data streams in after.
-    // If the token turns out to be invalid, loadDashboard() flips to Sign in.
     showScreen("screen-dashboard");
     loadDashboard().catch(() => showScreen("screen-landing"));
+  } else if (localStorage.getItem("ahad_signup_username")) {
+    // A verification was in progress (e.g. user switched to their mail app and
+    // the page reloaded). Restore the OTP screen so they can finish verifying.
+    restoreOtpScreen();
   } else {
     showScreen("screen-landing");
   }
@@ -784,3 +921,51 @@ document.addEventListener("DOMContentLoaded", () => {
   const splash = document.getElementById("bootSplash");
   if (splash) splash.style.display = "none";
 });
+
+/* Restore an in-progress verification screen from localStorage. */
+function restoreOtpScreen() {
+  const username = localStorage.getItem("ahad_signup_username") || "";
+  const email = localStorage.getItem("ahad_signup_email") || "your email";
+  signupUsername = username;
+  clearOtpBoxes("otpBoxesSignup");
+  document.getElementById("otpEmailNote").textContent =
+    "Welcome back, " + username + "! Enter your 6-digit code to finish verifying. (Sent to " + email + ".)";
+  showScreen("screen-otp");
+  startResendTimer(10);
+  logEvent("info", "Verification resumed", "Restored pending verification for " + username);
+  toast("Pick up where you left off — enter your code.", "info");
+}
+
+/* Paste a copied 6-digit code from the clipboard into the OTP boxes. */
+async function pasteOtp() {
+  let code = "";
+  try {
+    code = (await navigator.clipboard.readText() || "").replace(/[^0-9]/g, "").slice(0, 6);
+  } catch (e) {
+    toast("Clipboard access blocked — paste manually (Ctrl/Cmd+V).", "warning");
+    return;
+  }
+  if (code.length !== 6) {
+    toast("Clipboard doesn't contain a 6-digit code. Paste it manually.", "warning");
+    return;
+  }
+  const boxes = document.querySelectorAll("#otpBoxesSignup input");
+  code.split("").forEach((ch, i) => { if (boxes[i]) boxes[i].value = ch; });
+  toast("Code pasted!", "success");
+  if (boxes[5]) boxes[5].focus();
+}
+
+/* Show server-side login history (from /login-history) in the activity panel. */
+async function showLoginHistory() {
+  try {
+    const data = await api("/login-history", "GET", null, true);
+    openActivityPanel();
+    const list = data.history || [];
+    list.forEach(h => {
+      logEvent(h.success ? "success" : "error",
+        h.success ? "Sign-in recorded" : "Failed sign-in",
+        (h.location || "Email verification") + " · " + (h.ip_address || "") + " · " + (h.device_info || ""));
+    });
+    if (!list.length) toast("No login history yet.", "info");
+  } catch (err) { toast(err.message, "error"); }
+}

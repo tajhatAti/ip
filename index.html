@@ -3,14 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ahad Co - Secure Authentication</title>
+<title>Ahad Co — Secure Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/pro.css">
 <script>
-  // Boot guard (runs before first paint to stop the wrong-screen flash):
-  //   * logged-IN users keep the splash until the dashboard is ready
-  //   * logged-OUT users drop it immediately so the landing page shows at once
+  // Boot guard (runs before first paint to stop the wrong-screen flash).
   (function () {
     try {
       if (!localStorage.getItem('ahad_token')) {
@@ -24,428 +22,267 @@
 </head>
 <body>
 
-<!-- Boot splash: visible only while <html> has .booting -->
+<!-- Boot splash -->
 <div class="boot-splash" id="bootSplash">
+  <div class="boot-logo">AC</div>
   <div class="boot-spinner"></div>
-  <div class="boot-text">Loading Ahad Co…</div>
+  <div class="boot-text">Securing your session…</div>
 </div>
 
-<!-- NAVBAR -->
-<nav class="navbar">
-  <div class="nav-brand">
-    <div class="brand-logo">AC</div>
-    <span class="brand-name">Ahad Co</span>
-  </div>
-  <div class="nav-links">
-    <a href="#" class="nav-link active">Home</a>
-    <a href="#" class="nav-link">Features</a>
-    <a href="#" class="nav-link">Pricing</a>
-    <a href="#" class="nav-link">Contact</a>
-  </div>
-  <div class="nav-actions">
-    <button class="btn-ghost" onclick="showScreen('screen-signin')">Sign In</button>
-    <button class="btn-primary-nav" onclick="showScreen('screen-signup')">Get Started</button>
+<!-- ============ MARKETING NAVBAR ============ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="brand" onclick="showScreen('screen-landing')">
+      <div class="brand-mark">AC</div>
+      <span class="brand-text">Ahad&nbsp;Co</span>
+    </div>
+    <div class="nav-links">
+      <a class="nav-link" onclick="showScreen('screen-landing')">Overview</a>
+      <a class="nav-link" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">Features</a>
+      <a class="nav-link" onclick="document.getElementById('security').scrollIntoView({behavior:'smooth'})">Security</a>
+    </div>
+    <div class="nav-cta">
+      <button class="btn-ghost" onclick="showScreen('screen-signin')">Sign in</button>
+      <button class="btn-primary" onclick="showScreen('screen-signup')">Get started</button>
+    </div>
   </div>
 </nav>
 
-<!-- HERO SECTION -->
+<!-- ============ HERO / LANDING ============ -->
 <section class="hero" id="screen-landing">
-  <div class="hero-content">
-    <div class="badge">🚀 New: 2FA Authentication Available</div>
-    <h1 class="hero-title">Secure Authentication<br><span class="gradient-text">Made Simple</span></h1>
-    <p class="hero-desc">Enterprise-grade security without the complexity. Protect your accounts with our modern 2FA system.</p>
-    <div class="hero-buttons">
-      <button class="btn-hero-primary" onclick="showScreen('screen-signup')">Start Free Trial</button>
-      <button class="btn-hero-secondary">Watch Demo ▶</button>
-    </div>
-    <div class="hero-stats">
-      <div class="stat">
-        <span class="stat-number">50K+</span>
-        <span class="stat-label">Active Users</span>
+  <div class="hero-grid">
+    <div class="hero-copy">
+      <div class="pill"><span class="dot-live"></span> End-to-end encrypted · OTP verified</div>
+      <h1 class="hero-title">Your private vault,<br><span class="grad">always within reach.</span></h1>
+      <p class="hero-sub">Store credentials, notes and bookmarks behind password-grade auth with two-factor protection. Built to be permanent — your data never disappears.</p>
+      <div class="hero-actions">
+        <button class="btn-primary lg" onclick="showScreen('screen-signup')">Create free account →</button>
+        <button class="btn-ghost lg" onclick="showScreen('screen-signin')">I have an account</button>
       </div>
-      <div class="stat">
-        <span class="stat-number">99.9%</span>
-        <span class="stat-label">Uptime</span>
-      </div>
-      <div class="stat">
-        <span class="stat-number">24/7</span>
-        <span class="stat-label">Support</span>
+      <div class="hero-trust">
+        <div class="trust-item"><span>🔐</span> AES-style hashing (bcrypt)</div>
+        <div class="trust-item"><span>📱</span> TOTP 2FA + backup codes</div>
+        <div class="trust-item"><span>🗄️</span> PostgreSQL ready</div>
       </div>
     </div>
-  </div>
-  <div class="hero-visual">
-    <div class="floating-card">
-      <div class="fc-header">
-        <div class="fc-dot red"></div>
-        <div class="fc-dot yellow"></div>
-        <div class="fc-dot green"></div>
-      </div>
-      <div class="fc-content">
-        <div class="fc-icon">🔐</div>
-        <h3>Welcome Back!</h3>
-        <p>Your account is protected</p>
-        <div class="fc-shield">
-          <span class="shield-icon">✓</span>
-          <span>2FA Enabled</span>
+    <div class="hero-art">
+      <div class="glass-card">
+        <div class="gc-top">
+          <span class="gc-chip">SECURE</span>
+          <span class="gc-lock">🔒</span>
         </div>
+        <div class="gc-row"><span class="gc-k">Vault items</span><span class="gc-v">12</span></div>
+        <div class="gc-row"><span class="gc-k">Notes</span><span class="gc-v">38</span></div>
+        <div class="gc-row"><span class="gc-k">Sessions</span><span class="gc-v active">2 active</span></div>
+        <div class="gc-bar"><i></i></div>
+        <div class="gc-foot">2FA enabled · last sync just now</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- FEATURES SECTION -->
-<section class="features">
-  <div class="section-header">
-    <h2>Why Choose <span class="gradient-text">Ahad Co?</span></h2>
-    <p>Everything you need to secure your digital life</p>
+<!-- ============ FEATURES ============ -->
+<section class="section" id="features">
+  <div class="section-head">
+    <h2>Everything you need to stay <span class="grad">secure</span></h2>
+    <p>A complete toolkit for protecting and organising your digital life.</p>
   </div>
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">🔒</div>
-      <h3>End-to-End Encryption</h3>
-      <p>Your data is encrypted and protected at all times</p>
-    </div>
-    <div class="feature-card featured">
-      <div class="feature-icon">📱</div>
-      <h3>2FA Authentication</h3>
-      <p>Extra layer of security with authenticator apps</p>
-      <span class="feature-badge">Popular</span>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">⚡</div>
-      <h3>Lightning Fast</h3>
-      <p>Optimized for speed and performance</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🌙</div>
-      <h3>Dark Mode</h3>
-      <p>Easy on the eyes, day or night</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📊</div>
-      <h3>Activity Log</h3>
-      <p>Track all login attempts and changes</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔑</div>
-      <h3>Password Manager</h3>
-      <p>Generate and store strong passwords</p>
-    </div>
+  <div class="feat-grid">
+    <div class="feat"><div class="feat-ic">🔐</div><h3>Vault</h3><p>Passwords, codes and secrets, neatly grouped and one tap to copy.</p></div>
+    <div class="feat"><div class="feat-ic">📝</div><h3>Notes &amp; Diary</h3><p>Colour-coded notes that stay synced across every sign-in.</p></div>
+    <div class="feat"><div class="feat-ic">🔖</div><h3>Bookmarks</h3><p>Save and categorise links you never want to lose.</p></div>
+    <div class="feat"><div class="feat-ic">📱</div><h3>2FA</h3><p>Authenticator-app verification with recovery backup codes.</p></div>
+    <div class="feat"><div class="feat-ic">📊</div><h3>Activity log</h3><p>Track logins, OTP attempts and security events in real time.</p></div>
+    <div class="feat"><div class="feat-ic">📤</div><h3>Data export</h3><p>Download everything you own, anytime, in one click.</p></div>
   </div>
 </section>
 
-<!-- PRICING SECTION -->
-<section class="pricing">
-  <div class="section-header">
-    <h2>Simple, Transparent <span class="gradient-text">Pricing</span></h2>
-    <p>Start free, upgrade when you need more</p>
+<!-- ============ SECURITY ============ -->
+<section class="section alt" id="security">
+  <div class="section-head">
+    <h2>Security, <span class="grad">by default</span></h2>
+    <p>Industry-standard practises, quietly working in the background.</p>
   </div>
-  <div class="pricing-grid">
-    <div class="pricing-card">
-      <div class="plan-name">Free</div>
-      <div class="plan-price">$0<span>/month</span></div>
-      <ul class="plan-features">
-        <li>✓ 1 User</li>
-        <li>✓ Email Verification</li>
-        <li>✓ Password Reset</li>
-        <li>✓ Dark Mode</li>
-      </ul>
-      <button class="btn-plan" onclick="showScreen('screen-signup')">Get Started</button>
-    </div>
-    <div class="pricing-card popular">
-      <div class="popular-badge">Most Popular</div>
-      <div class="plan-name">Pro</div>
-      <div class="plan-price">$9<span>/month</span></div>
-      <ul class="plan-features">
-        <li>✓ Unlimited Users</li>
-        <li>✓ 2FA Authentication</li>
-        <li>✓ API Access</li>
-        <li>✓ Priority Support</li>
-        <li>✓ Advanced Analytics</li>
-      </ul>
-      <button class="btn-plan-primary" onclick="showScreen('screen-signup')">Start Trial</button>
-    </div>
-    <div class="pricing-card">
-      <div class="plan-name">Enterprise</div>
-      <div class="plan-price">$29<span>/month</span></div>
-      <ul class="plan-features">
-        <li>✓ Everything in Pro</li>
-        <li>✓ Custom Branding</li>
-        <li>✓ SSO Integration</li>
-        <li>✓ Dedicated Support</li>
-        <li>✓ SLA Guarantee</li>
-      </ul>
-      <button class="btn-plan" onclick="showScreen('screen-signup')">Contact Us</button>
-    </div>
+  <div class="sec-grid">
+    <div class="sec-card"><h4>🔐 bcrypt hashing</h4><p>Passwords are never stored in plain text.</p></div>
+    <div class="sec-card"><h4>🎟️ One-time codes</h4><p>Email OTP expires automatically after 10 minutes.</p></div>
+    <div class="sec-card"><h4>🛡️ Session control</h4><p>Review and revoke active devices instantly.</p></div>
+    <div class="sec-card"><h4>⚠️ Rate limiting</h4><p>Brute-force protection on every auth endpoint.</p></div>
   </div>
 </section>
 
-<!-- FOOTER -->
-<footer class="footer">
-  <div class="footer-content">
-    <div class="footer-brand">
-      <div class="brand-logo">AC</div>
-      <span>Ahad Co</span>
-    </div>
-    <div class="footer-links">
-      <a href="#">Privacy</a>
-      <a href="#">Terms</a>
-      <a href="#">Support</a>
-      <a href="#">Documentation</a>
-    </div>
-    <div class="footer-copy">© 2026 Ahad Co. All rights reserved.</div>
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="brand"><div class="brand-mark sm">AC</div><span class="brand-text">Ahad Co</span></div>
+    <p>© 2026 Ahad Co · Built for permanent, private storage.</p>
   </div>
 </footer>
 
-<!-- AUTH SCREENS -->
-<div class="auth-container hidden" id="screen-signup">
+<!-- ================= AUTH: SIGN UP ================= -->
+<div class="auth" id="screen-signup">
   <div class="auth-card">
-    <button class="back-btn" onclick="showScreen('screen-landing')">← Back</button>
-    <div class="auth-header">
-      <h2>Create Account</h2>
-      <p>Join thousands of users protecting their accounts</p>
+    <button class="back" onclick="showScreen('screen-landing')">← Back</button>
+    <div class="auth-head">
+      <div class="brand-mark lg">AC</div>
+      <h2>Create your account</h2>
+      <p>Start securing your data in seconds.</p>
     </div>
     <form id="formSignup" class="auth-form">
-      <div class="input-group">
-        <label>Username</label>
-        <input type="text" id="su_username" placeholder="johndoe" required>
-      </div>
-      <div class="input-group">
-        <label>Email</label>
-        <input type="email" id="su_email" placeholder="john@example.com" required>
-      </div>
-      <div class="input-group">
-        <label>Password</label>
-        <input type="password" id="su_password" placeholder="••••••••" required>
+      <label class="field"><span>Username</span><input type="text" id="su_username" placeholder="e.g. ahad_r" autocomplete="username" required></label>
+      <label class="field"><span>Email</span><input type="email" id="su_email" placeholder="you@example.com" autocomplete="email" required></label>
+      <label class="field"><span>Password</span><input type="password" id="su_password" placeholder="At least 6 characters" autocomplete="new-password" required>
         <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
         <span class="strength-label" id="strengthLabel"></span>
-      </div>
-      <button type="submit" class="btn-auth" id="btnSignup">
-        <span>Create Account</span>
-      </button>
+      </label>
+      <button type="submit" class="btn-primary block" id="btnSignup"><span>Create account</span></button>
     </form>
-    <p class="auth-switch">Already have account? <a onclick="showScreen('screen-signin')">Sign In</a></p>
+    <p class="auth-switch">Already have an account? <a onclick="showScreen('screen-signin')">Sign in</a></p>
   </div>
 </div>
 
-<div class="auth-container hidden" id="screen-signin">
+<!-- ================= AUTH: SIGN IN ================= -->
+<div class="auth" id="screen-signin">
   <div class="auth-card">
-    <button class="back-btn" onclick="showScreen('screen-landing')">← Back</button>
-    <div class="auth-header">
-      <h2>Welcome Back</h2>
-      <p>Sign in to your protected account</p>
+    <button class="back" onclick="showScreen('screen-landing')">← Back</button>
+    <div class="auth-head">
+      <div class="brand-mark lg">AC</div>
+      <h2>Welcome back</h2>
+      <p>Sign in to your secure vault.</p>
     </div>
     <form id="formSignin" class="auth-form">
-      <div class="input-group">
-        <label>Email or Username</label>
-        <input type="text" id="si_username" placeholder="john@example.com" required>
+      <label class="field"><span>Email or username</span><input type="text" id="si_username" placeholder="you@example.com" autocomplete="username" required></label>
+      <label class="field"><span>Password</span><input type="password" id="si_password" placeholder="••••••••" autocomplete="current-password" required></label>
+      <div class="field-row">
+        <label class="check"><input type="checkbox"> Remember me</label>
+        <a class="link" onclick="showScreen('screen-forgot1')">Forgot password?</a>
       </div>
-      <div class="input-group">
-        <label>Password</label>
-        <input type="password" id="si_password" placeholder="••••••••" required>
-      </div>
-      <div class="form-row">
-        <label class="checkbox-label">
-          <input type="checkbox"> Remember me
-        </label>
-        <a onclick="showScreen('screen-forgot1')" class="forgot-link">Forgot password?</a>
-      </div>
-      <button type="submit" class="btn-auth" id="btnSignin">
-        <span>Sign In</span>
-      </button>
+      <button type="submit" class="btn-primary block" id="btnSignin"><span>Sign in</span></button>
     </form>
-    <p class="auth-switch">Don't have account? <a onclick="showScreen('screen-signup')">Sign Up</a></p>
+    <p class="auth-switch">New here? <a onclick="showScreen('screen-signup')">Create an account</a></p>
   </div>
 </div>
 
-<!-- OTP SCREEN -->
-<div class="auth-container hidden" id="screen-otp">
+<!-- ================= AUTH: OTP VERIFY ================= -->
+<div class="auth" id="screen-otp">
   <div class="auth-card">
-    <button class="back-btn" onclick="showScreen('screen-signup')">← Back</button>
-    <div class="auth-header">
-      <div class="otp-icon">📧</div>
-      <h2>Verify Email</h2>
-      <p id="otpEmailNote">Enter the 6-digit code sent to your email</p>
+    <div class="auth-head">
+      <div class="otp-emoji">✉️</div>
+      <h2>Verify your email</h2>
+      <p id="otpEmailNote">Enter the 6-digit code we sent to your inbox.</p>
     </div>
     <div class="otp-boxes" id="otpBoxesSignup">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric">
+      <input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric">
     </div>
-    <button class="btn-auth" id="btnVerify"><span>Verify & Continue</span></button>
-    <p class="resend-row">
-      <span id="resendTimer">Resend in 00:45</span>
-      <a id="resendLink" class="resend-link">Resend Code</a>
-    </p>
+    <button class="btn-secondary block" id="otpPasteBtn" type="button">📋 Paste from clipboard</button>
+    <button class="btn-primary block" id="btnVerify"><span>Verify &amp; continue</span></button>
+    <div class="otp-foot">
+      <span id="resendTimer"></span>
+      <a id="resendLink" class="link">Resend code</a>
+    </div>
+    <p class="auth-hint">Tip: your code stays valid for 10 minutes — you can safely switch apps to check your mail and come back.</p>
   </div>
 </div>
 
-<!-- FORGOT PASSWORD -->
-<div class="auth-container hidden" id="screen-forgot1">
+<!-- ================= AUTH: FORGOT 1 (email) ================= -->
+<div class="auth" id="screen-forgot1">
   <div class="auth-card">
-    <button class="back-btn" onclick="showScreen('screen-signin')">← Back</button>
-    <div class="auth-header">
-      <div class="otp-icon">🔑</div>
-      <h2>Reset Password</h2>
-      <p>We'll send you a reset code</p>
+    <button class="back" onclick="showScreen('screen-signin')">← Back</button>
+    <div class="auth-head">
+      <div class="otp-emoji">🔑</div>
+      <h2>Reset password</h2>
+      <p>We'll email you a verification code.</p>
     </div>
     <form id="formForgot1" class="auth-form">
-      <div class="input-group">
-        <label>Email</label>
-        <input type="email" id="fp_email" placeholder="john@example.com" required>
-      </div>
-      <button type="submit" class="btn-auth" id="btnForgot1"><span>Send Reset Code</span></button>
+      <label class="field"><span>Email</span><input type="email" id="fp_email" placeholder="you@example.com" required></label>
+      <button type="submit" class="btn-primary block" id="btnForgot1"><span>Send reset code</span></button>
     </form>
   </div>
 </div>
 
-<div class="auth-container hidden" id="screen-forgot2">
+<!-- ================= AUTH: FORGOT 2 (otp) ================= -->
+<div class="auth" id="screen-forgot2">
   <div class="auth-card">
-    <button class="back-btn" onclick="showScreen('screen-forgot1')">← Back</button>
-    <div class="auth-header">
-      <h2>Enter Code</h2>
-      <p>Check your email for the reset code</p>
-    </div>
+    <button class="back" onclick="showScreen('screen-forgot1')">← Back</button>
+    <div class="auth-head"><div class="otp-emoji">🔢</div><h2>Enter reset code</h2><p>Check your email for the 6-digit code.</p></div>
     <div class="otp-boxes" id="otpBoxesForgot">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
-      <input maxlength="1" type="text" inputmode="numeric">
+      <input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric">
+      <input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric">
     </div>
-    <button class="btn-auth" id="btnForgot2"><span>Verify Code</span></button>
+    <button class="btn-primary block" id="btnForgot2"><span>Verify code</span></button>
   </div>
 </div>
 
-<div class="auth-container hidden" id="screen-forgot3">
+<!-- ================= AUTH: FORGOT 3 (new pass) ================= -->
+<div class="auth" id="screen-forgot3">
   <div class="auth-card">
-    <button class="back-btn" onclick="showScreen('screen-forgot2')">← Back</button>
-    <div class="auth-header">
-      <h2>New Password</h2>
-      <p>Enter your new password</p>
-    </div>
+    <button class="back" onclick="showScreen('screen-forgot2')">← Back</button>
+    <div class="auth-head"><div class="otp-emoji">🛡️</div><h2>New password</h2><p>Choose a strong new password.</p></div>
     <form id="formForgot3" class="auth-form">
-      <div class="input-group">
-        <label>New Password</label>
-        <input type="password" id="fp_newpass" placeholder="••••••••" required>
-      </div>
-      <div class="input-group">
-        <label>Confirm Password</label>
-        <input type="password" id="fp_confirmpass" placeholder="••••••••" required>
-      </div>
-      <button type="submit" class="btn-auth" id="btnForgot3"><span>Update Password</span></button>
+      <label class="field"><span>New password</span><input type="password" id="fp_newpass" placeholder="••••••••" required></label>
+      <label class="field"><span>Confirm password</span><input type="password" id="fp_confirmpass" placeholder="••••••••" required></label>
+      <button type="submit" class="btn-primary block" id="btnForgot3"><span>Update password</span></button>
     </form>
   </div>
 </div>
 
-<!-- SUCCESS SCREEN -->
-<div class="auth-container hidden" id="screen-forgot-success">
+<!-- ================= AUTH: SUCCESS ================= -->
+<div class="auth" id="screen-forgot-success">
   <div class="auth-card center">
-    <div class="success-icon">✓</div>
-    <h2>Password Updated!</h2>
-    <p>Redirecting in <span id="successCountdown">3</span>...</p>
+    <div class="success-ring">✓</div>
+    <h2>Password updated!</h2>
+    <p>Redirecting in <span id="successCountdown">3</span>…</p>
   </div>
 </div>
 
-<!-- ====================== DASHBOARD (COMPLETE) ====================== -->
-<div class="dashboard hidden" id="screen-dashboard">
-  <!-- Top Navigation -->
-  <nav class="dash-nav">
-    <div class="dash-brand">
-      <div class="brand-logo">AC</div>
-      <span>Ahad Co</span>
-    </div>
-    <div class="dash-tabs">
-      <button class="dash-tab active" data-tab="overview">📊 Overview</button>
-      <button class="dash-tab" data-tab="vault">🔐 Vault</button>
-      <button class="dash-tab" data-tab="notes">📝 Notes</button>
-      <button class="dash-tab" data-tab="bookmarks">🔖 Bookmarks</button>
-      <button class="dash-tab" data-tab="profile">👤 Profile</button>
-    </div>
+<!-- ============================ DASHBOARD ============================ -->
+<div class="dashboard" id="screen-dashboard">
+  <!-- Dashboard top bar -->
+  <header class="dash-bar">
+    <div class="brand"><div class="brand-mark">AC</div><span class="brand-text">Ahad Co</span></div>
+    <nav class="dash-tabs">
+      <button class="dash-tab active" data-tab="overview">Overview</button>
+      <button class="dash-tab" data-tab="vault">Vault</button>
+      <button class="dash-tab" data-tab="notes">Notes</button>
+      <button class="dash-tab" data-tab="bookmarks">Bookmarks</button>
+      <button class="dash-tab" data-tab="profile">Profile</button>
+    </nav>
     <div class="dash-user">
-      <span id="dashUsername">User</span>
-      <button class="btn-logout" id="btnLogout">Logout</button>
+      <button class="icon-btn" id="activityBell" title="Activity log"><span>🔔</span><em class="bell-dot hidden" id="bellDot"></em></button>
+      <span class="user-name" id="dashUsername">User</span>
+      <button class="btn-ghost sm" id="btnLogout">Sign out</button>
     </div>
-  </nav>
+  </header>
 
-  <!-- Main Content Area -->
-  <div class="dash-main-content">
-    
-    <!-- OVERVIEW TAB -->
+  <main class="dash-main">
+    <!-- OVERVIEW -->
     <div class="dash-tab-content active" id="tab-overview">
-      <div class="welcome-banner">
-        <h1>Welcome back, <span id="dashUsername2">User</span>! 👋</h1>
-        <p>Your data is secure and synced</p>
+      <div class="welcome">
+        <h1>Hello, <span id="dashUsername2">User</span> 👋</h1>
+        <p>Your vault is synced and secure.</p>
       </div>
-      
       <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon">🔐</div>
-          <div class="stat-info">
-            <span class="stat-num" id="statVault">0</span>
-            <span class="stat-name">Saved Items</span>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">📝</div>
-          <div class="stat-info">
-            <span class="stat-num" id="statNotes">0</span>
-            <span class="stat-name">Notes</span>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">🔖</div>
-          <div class="stat-info">
-            <span class="stat-num" id="statBookmarks">0</span>
-            <span class="stat-name">Bookmarks</span>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">📅</div>
-          <div class="stat-info">
-            <span class="stat-num" id="statDays">0</span>
-            <span class="stat-name">Days Active</span>
-          </div>
-        </div>
+        <div class="stat-card"><div class="stat-ic">🔐</div><div><b id="statVault">0</b><span>Vault items</span></div></div>
+        <div class="stat-card"><div class="stat-ic">📝</div><div><b id="statNotes">0</b><span>Notes</span></div></div>
+        <div class="stat-card"><div class="stat-ic">🔖</div><div><b id="statBookmarks">0</b><span>Bookmarks</span></div></div>
+        <div class="stat-card"><div class="stat-ic">📅</div><div><b id="statDays">0</b><span>Days active</span></div></div>
       </div>
-
-      <div class="quick-actions">
-        <h2>⚡ Quick Actions</h2>
-        <div class="action-buttons">
-          <button class="action-btn-large" onclick="switchTab('vault')">
-            <span class="btn-icon">➕</span>
-            <span class="btn-text">Add to Vault</span>
-          </button>
-          <button class="action-btn-large" onclick="switchTab('notes')">
-            <span class="btn-icon">✨</span>
-            <span class="btn-text">New Note</span>
-          </button>
-          <button class="action-btn-large" onclick="switchTab('bookmarks')">
-            <span class="btn-icon">🌐</span>
-            <span class="btn-text">Add Bookmark</span>
-          </button>
-          <button class="action-btn-large" onclick="switchTab('profile')">
-            <span class="btn-icon">📱</span>
-            <span class="btn-text">Update Phone</span>
-          </button>
+      <div class="quick">
+        <h2>Quick actions</h2>
+        <div class="quick-grid">
+          <button class="quick-card" onclick="switchTab('vault')"><span class="qc-ic">➕</span><span>Add to vault</span></button>
+          <button class="quick-card" onclick="switchTab('notes')"><span class="qc-ic">✨</span><span>New note</span></button>
+          <button class="quick-card" onclick="switchTab('bookmarks')"><span class="qc-ic">🌐</span><span>Save bookmark</span></button>
+          <button class="quick-card" onclick="switchTab('profile')"><span class="qc-ic">📱</span><span>Update profile</span></button>
         </div>
       </div>
     </div>
 
-    <!-- VAULT TAB -->
+    <!-- VAULT -->
     <div class="dash-tab-content" id="tab-vault">
-      <div class="tab-header">
-        <h2>🔐 Secure Vault</h2>
-        <button class="btn-add-new" id="btnAddVault">➕ Add New</button>
-      </div>
-      
-      <!-- Vault Add Form -->
+      <div class="tab-head"><h2>🔐 Vault</h2><button class="btn-primary sm" id="btnAddVault">＋ Add new</button></div>
       <div class="add-form hidden" id="vaultForm">
-        <div class="form-row-custom">
+        <div class="form-row">
           <select id="vaultType" class="input-select">
             <option value="phone">📱 Phone</option>
             <option value="email">📧 Email</option>
@@ -453,40 +290,27 @@
             <option value="link">🔗 Link</option>
             <option value="note">📝 Note</option>
             <option value="password">🔐 Password</option>
-            <option value="secret_file">📁 Secret File / Note</option>
+            <option value="secret_file">📁 Secret file / note</option>
           </select>
-          <input type="text" id="vaultLabel" placeholder="Label (e.g., Bank Account)" class="input-text">
+          <input type="text" id="vaultLabel" class="input-text" placeholder="Label (e.g. Bank account)">
         </div>
-        <textarea id="vaultValue" placeholder="Value / Content..." class="input-textarea"></textarea>
+        <textarea id="vaultValue" class="input-textarea" placeholder="Value / content…"></textarea>
         <div class="form-actions">
-          <button class="btn-save-form" onclick="saveVault()">💾 Save</button>
-          <button class="btn-cancel-form" onclick="hideVaultForm()">Cancel</button>
+          <button class="btn-primary sm" onclick="saveVault()">💾 Save</button>
+          <button class="btn-ghost sm" onclick="hideVaultForm()">Cancel</button>
         </div>
       </div>
-
-      <!-- Vault List -->
-      <div class="vault-list" id="vaultList">
-        <div class="empty-state">
-          <div class="empty-icon">🔐</div>
-          <p>Your vault is empty</p>
-          <small>Click "Add New" to save your first item</small>
-        </div>
-      </div>
+      <div class="vault-list" id="vaultList"></div>
     </div>
 
-    <!-- NOTES TAB -->
+    <!-- NOTES -->
     <div class="dash-tab-content" id="tab-notes">
-      <div class="tab-header">
-        <h2>📝 Notes & Diary</h2>
-        <button class="btn-add-new" id="btnAddNote">➕ New Note</button>
-      </div>
-      
-      <!-- Note Add Form -->
+      <div class="tab-head"><h2>📝 Notes &amp; diary</h2><button class="btn-primary sm" id="btnAddNote">＋ New note</button></div>
       <div class="add-form hidden" id="noteForm">
-        <input type="text" id="noteTitle" placeholder="Note Title" class="input-text">
-        <textarea id="noteContent" placeholder="Write your note here..." class="input-textarea tall"></textarea>
+        <input type="text" id="noteTitle" class="input-text" placeholder="Note title">
+        <textarea id="noteContent" class="input-textarea tall" placeholder="Write your note…"></textarea>
         <div class="color-picker">
-          <span>Color:</span>
+          <span>Colour</span>
           <button class="color-btn" data-color="#6366f1" style="background:#6366f1"></button>
           <button class="color-btn" data-color="#22d3ee" style="background:#22d3ee"></button>
           <button class="color-btn" data-color="#10b981" style="background:#10b981"></button>
@@ -494,101 +318,78 @@
           <button class="color-btn" data-color="#ef4444" style="background:#ef4444"></button>
         </div>
         <div class="form-actions">
-          <button class="btn-save-form" onclick="saveNote()">💾 Save Note</button>
-          <button class="btn-cancel-form" onclick="hideNoteForm()">Cancel</button>
+          <button class="btn-primary sm" onclick="saveNote()">💾 Save note</button>
+          <button class="btn-ghost sm" onclick="hideNoteForm()">Cancel</button>
         </div>
       </div>
-
-      <!-- Notes Grid -->
-      <div class="notes-grid" id="notesList">
-        <div class="empty-state">
-          <div class="empty-icon">📝</div>
-          <p>No notes yet</p>
-          <small>Create your first note</small>
-        </div>
-      </div>
+      <div class="notes-grid" id="notesList"></div>
     </div>
 
-    <!-- BOOKMARKS TAB -->
+    <!-- BOOKMARKS -->
     <div class="dash-tab-content" id="tab-bookmarks">
-      <div class="tab-header">
-        <h2>🔖 Bookmarks</h2>
-        <button class="btn-add-new" id="btnAddBookmark">➕ Add Bookmark</button>
-      </div>
-      
-      <!-- Bookmark Add Form -->
+      <div class="tab-head"><h2>🔖 Bookmarks</h2><button class="btn-primary sm" id="btnAddBookmark">＋ Add bookmark</button></div>
       <div class="add-form hidden" id="bookmarkForm">
-        <input type="text" id="bookmarkTitle" placeholder="Website Name" class="input-text">
-        <input type="url" id="bookmarkUrl" placeholder="https://example.com" class="input-text">
-        <input type="text" id="bookmarkDesc" placeholder="Description (optional)" class="input-text">
+        <input type="text" id="bookmarkTitle" class="input-text" placeholder="Website name">
+        <input type="url" id="bookmarkUrl" class="input-text" placeholder="https://example.com">
+        <input type="text" id="bookmarkDesc" class="input-text" placeholder="Description (optional)">
         <div class="form-actions">
-          <button class="btn-save-form" onclick="saveBookmark()">💾 Save Bookmark</button>
-          <button class="btn-cancel-form" onclick="hideBookmarkForm()">Cancel</button>
+          <button class="btn-primary sm" onclick="saveBookmark()">💾 Save bookmark</button>
+          <button class="btn-ghost sm" onclick="hideBookmarkForm()">Cancel</button>
         </div>
       </div>
-
-      <!-- Bookmarks List -->
-      <div class="bookmarks-list" id="bookmarksList">
-        <div class="empty-state">
-          <div class="empty-icon">🔖</div>
-          <p>No bookmarks yet</p>
-          <small>Save your favorite links</small>
-        </div>
-      </div>
+      <div class="bookmarks-list" id="bookmarksList"></div>
     </div>
 
-    <!-- PROFILE TAB -->
+    <!-- PROFILE -->
     <div class="dash-tab-content" id="tab-profile">
-      <div class="tab-header">
-        <h2>👤 Profile Settings</h2>
-      </div>
-      
+      <div class="tab-head"><h2>👤 Profile &amp; security</h2></div>
       <div class="profile-grid">
         <div class="profile-card">
-          <h3>📧 Account Info</h3>
-          <div class="profile-field">
-            <label>Username</label>
-            <input type="text" id="profileUsername" disabled class="input-disabled">
-          </div>
-          <div class="profile-field">
-            <label>Email</label>
-            <input type="email" id="profileEmail" class="input-text">
-          </div>
-          <div class="profile-field">
-            <label>Phone Number</label>
-            <input type="tel" id="profilePhone" placeholder="+880 1XXX XXXXXX" class="input-text">
-          </div>
-          <div class="profile-field">
-            <label>Custom Code</label>
-            <input type="text" id="profileCode" placeholder="AHAD-001" class="input-text">
-          </div>
-          <button class="btn-save-form" onclick="saveProfile()">💾 Save Changes</button>
+          <h3>Account</h3>
+          <label class="field"><span>Username</span><input type="text" id="profileUsername" class="input-text" disabled></label>
+          <label class="field"><span>Email</span><input type="email" id="profileEmail" class="input-text" disabled></label>
+          <label class="field"><span>Phone</span><input type="tel" id="profilePhone" class="input-text" placeholder="+880 1XXX XXXXXX"></label>
+          <label class="field"><span>Custom code</span><input type="text" id="profileCode" class="input-text" placeholder="AHAD-001"></label>
+          <button class="btn-primary sm" onclick="saveProfile()">💾 Save changes</button>
         </div>
-
         <div class="profile-card">
-          <h3>🔐 Security</h3>
-          <button class="btn-security" onclick="showScreen('screen-forgot1')">🔄 Change Password</button>
-          <button class="btn-security" id="btn2FA">📱 Setup 2FA</button>
-          <button class="btn-security" onclick="exportData()">📤 Export My Data</button>
+          <h3>Security</h3>
+          <button class="btn-secondary block left" onclick="showScreen('screen-forgot1')">🔄 Change password</button>
+          <button class="btn-secondary block left" id="btn2FA">📱 Set up 2FA</button>
+          <button class="btn-secondary block left" onclick="exportData()">📤 Export my data</button>
+          <button class="btn-ghost block left" onclick="showLoginHistory()">📜 View login history</button>
         </div>
-
-        <div class="profile-card danger-zone">
-          <h3>⚠️ Danger Zone</h3>
-          <button class="btn-danger">🗑️ Delete Account</button>
+        <div class="profile-card danger">
+          <h3>Danger zone</h3>
+          <p class="muted">Permanently delete your account and all data.</p>
+          <button class="btn-danger block">🗑️ Delete account</button>
         </div>
       </div>
     </div>
 
-  </div>
+  </main>
 </div>
 
-<!-- TOAST CONTAINER -->
+<!-- ============ ACTIVITY LOG SLIDE-IN PANEL ============ -->
+<aside class="activity-panel" id="activityPanel">
+  <div class="ap-head">
+    <h3>Activity log</h3>
+    <button class="ap-close" id="activityClose">✕</button>
+  </div>
+  <div class="ap-sub">Live security &amp; account events from this session.</div>
+  <div class="ap-list" id="activityList">
+    <div class="ap-empty">No activity yet. Events like sign-ups, OTP, and logins will appear here in real time.</div>
+  </div>
+  <button class="ap-clear" id="activityClear">Clear log</button>
+</aside>
+<div class="activity-overlay hidden" id="activityOverlay"></div>
+
+<!-- TOAST -->
 <div class="toast-container" id="toastContainer"></div>
 
 <script src="/static/pro.js"></script>
-<!-- Safety net: if the main script ever fails to boot, never leave the user
-     stuck on the splash forever. -->
 <script>
+  // Safety net: never leave the user stuck on the splash.
   setTimeout(function () {
     var h = document.documentElement;
     if (h.classList.contains('booting')) h.classList.remove('booting');

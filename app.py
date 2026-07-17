@@ -272,6 +272,28 @@ def create_session(user_id: int, request: Request) -> str:
     return token
 
 
+def record_login_attempt(user_id: int, request: Request, success: bool, location: Optional[str] = None):
+    """Persist a login attempt (success or failure) to login_history.
+
+    Failures here must never break the calling request, so all errors are
+    swallowed and only logged. Used by the login/verify flows so the user
+    can see a real activity trail on their dashboard.
+    """
+    try:
+        conn = get_db_connection()
+        try:
+            conn.execute("""
+                INSERT INTO login_history (user_id, ip_address, device_info, location, success, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, client_ip(request), parse_device(request.headers.get("user-agent", "")),
+                  location, 1 if success else 0, now_utc_str()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to record login attempt: %s", exc)
+
+
 def send_email(receiver_email: str, subject: str, otp: str, username: str, purpose: str):
     brevo_api_key = os.getenv("BREVO_API_KEY", "").strip()
     sender_email = os.getenv("SENDER_EMAIL", "").strip()
@@ -395,10 +417,30 @@ def signup(user: UserSignup, request: Request):
 
     try:
         existing = cursor.execute(
-            "SELECT id FROM users WHERE username = ? OR email = ?", (username, email)
+            "SELECT id, username, email, is_verified FROM users WHERE username = ? OR email = ?",
+            (username, email),
         ).fetchone()
+
         if existing:
-            raise HTTPException(status_code=400, detail="Username or email is already taken.")
+            if existing["is_verified"] == 1:
+                # Genuinely taken by an active account -> cannot reuse.
+                raise HTTPException(status_code=400, detail="Username or email is already taken.")
+            # Unverified account from an incomplete signup (e.g. the user lost
+            # the OTP page while checking mail). Don't block them: refresh the
+            # OTP + password and re-send, so they can finish verifying instead
+            # of being stuck on "already taken".
+            otp = generate_otp()
+            current_time = now_utc_str()
+            cursor.execute("""
+                UPDATE users SET password=?, otp=?, otp_created_at=?, updated_at=?
+                WHERE id=?
+            """, (hashed_pw, otp, current_time, current_time, existing["id"]))
+            conn.commit()
+            send_email(email, "Verify your Ahad Co account", otp, username, "Email Verification")
+            return {
+                "message": "Welcome back! A fresh verification code was sent to your email.",
+                "resent": True,
+            }
 
         cursor.execute("""
             INSERT INTO users (username, email, password, otp, otp_created_at,
@@ -483,6 +525,7 @@ def verify_otp(user: UserVerify, request: Request):
                 WHERE id=?
             """, (now_utc_str(), row["id"]))
             conn.commit()
+            record_login_attempt(row["id"], request, success=True, location="Email verification")
 
         # Auto-login: create a session immediately after successful verification
         token = create_session(row["id"], request)
@@ -512,12 +555,23 @@ def login(user: UserLogin, request: Request):
             ).fetchone()
 
         if not row or not verify_password(user.password, row["password"]):
+            # Record the failed attempt if we could identify the account.
+            if row:
+                record_login_attempt(row["id"], request, success=False)
             raise HTTPException(status_code=400, detail="Incorrect username/email or password.")
         if row["is_verified"] == 0:
-            raise HTTPException(status_code=400, detail="Please verify your email before signing in.")
+            # Correct credentials, but email not verified yet. Instead of an
+            # error, route them straight to verification so they can finish
+            # without having to re-signup.
+            return {
+                "need_verify": True,
+                "username": row["username"],
+                "message": "Please verify your email to continue. A code was sent when you signed up.",
+            }
     finally:
         conn.close()
 
+    record_login_attempt(row["id"], request, success=True)
     token = create_session(row["id"], request)
     return {"message": "Login successful!", "username": row["username"], "token": token}
 

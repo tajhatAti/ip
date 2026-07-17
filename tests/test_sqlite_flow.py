@@ -47,9 +47,10 @@ print("[2] signup")
 r = client.post("/signup", json={"username": USERNAME, "email": EMAIL, "password": PASSWORD})
 check(r.status_code == 200, f"signup 200 (got {r.status_code} {r.text})")
 
-# duplicate signup should be rejected
+# duplicate signup of an UNVERIFIED account now re-sends the OTP instead of
+# erroring (so users who lose the OTP page while checking mail can finish).
 r = client.post("/signup", json={"username": USERNAME, "email": "x@example.com", "password": PASSWORD})
-check(r.status_code == 400, "duplicate username rejected")
+check(r.status_code == 200 and r.json().get("resent") is True, "duplicate UNVERIFIED signup re-sends OTP")
 
 # read OTP straight from DB to verify
 import database  # noqa: E402
