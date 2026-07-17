@@ -210,6 +210,12 @@ document.getElementById("btnVerify").addEventListener("click", async () => {
     authToken = data.token;
     localStorage.setItem("ahad_token", authToken);
     localStorage.removeItem("ahad_signup_username");
+    signupUsername = "";
+    // Clear the signup form + OTP so the entered email/username never lingers.
+    clearOtpBoxes("otpBoxesSignup");
+    document.getElementById("su_username").value = "";
+    document.getElementById("su_email").value = "";
+    document.getElementById("su_password").value = "";
     toast("Email verified! Welcome! 🎉", "success");
     await loadDashboard();
     showScreen("screen-dashboard");
@@ -235,6 +241,9 @@ async function handleSignin(e) {
     const data = await api("/login", "POST", { username, password });
     authToken = data.token;
     localStorage.setItem("ahad_token", authToken);
+    // Clear the form so the entered username/password never lingers (e.g. via bfcache Back).
+    document.getElementById("si_username").value = "";
+    document.getElementById("si_password").value = "";
     toast("Welcome back!", "success");
     await loadDashboard();
     showScreen("screen-dashboard");
@@ -369,6 +378,8 @@ async function saveVault() {
 }
 
 async function loadVault() {
+  const list = document.getElementById("vaultList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading vault…</p></div>`;
   try {
     const data = await api("/vault", "GET", null, true);
     const list = document.getElementById("vaultList");
@@ -452,6 +463,8 @@ async function saveNote() {
 }
 
 async function loadNotes() {
+  const list = document.getElementById("notesList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading notes…</p></div>`;
   try {
     const data = await api("/notes", "GET", null, true);
     const list = document.getElementById("notesList");
@@ -536,6 +549,8 @@ async function saveBookmark() {
 }
 
 async function loadBookmarks() {
+  const list = document.getElementById("bookmarksList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading bookmarks…</p></div>`;
   try {
     const data = await api("/bookmarks", "GET", null, true);
     const list = document.getElementById("bookmarksList");
@@ -669,6 +684,34 @@ async function loadStats() {
 }
 
 /* ==================== INIT & EVENT WIRING ==================== */
+
+// Re-establish the correct screen based on the CURRENT token. Used at boot and
+// when the page is restored from the browser's back/forward cache (bfcache),
+// which otherwise can resurrect a stale auth screen with the user's old form
+// data still in it.
+function reconcileScreen() {
+  const hasToken = !!localStorage.getItem("ahad_token");
+  if (hasToken) {
+    authToken = localStorage.getItem("ahad_token");
+    showScreen("screen-dashboard");
+    loadDashboard().catch(() => { /* loadDashboard handles its own errors */ });
+  } else {
+    authToken = null;
+    showScreen("screen-landing");
+  }
+}
+
+window.addEventListener("pageshow", (event) => {
+  // Page restored from bfcache (e.g. user pressed Back from another site).
+  // Force the screen back in sync with the real auth state.
+  if (event.persisted) {
+    reconcileScreen();
+    document.documentElement.classList.remove("booting");
+    const splash = document.getElementById("bootSplash");
+    if (splash) splash.style.display = "none";
+  }
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   // Logout
   document.getElementById("btnLogout").addEventListener("click", async () => {
@@ -725,10 +768,19 @@ document.addEventListener("DOMContentLoaded", () => {
     if (b.textContent.includes("Delete Account")) b.addEventListener("click", e => { e.preventDefault(); deleteAccount(); });
   });
 
-  // Boot: auto-login if token exists
+  // Boot: decide the screen SYNCHRONOUSLY so the user never sees a flash of
+  // the wrong screen (e.g. landing/Sign-in for ~1-2s before the dashboard).
   if (authToken) {
-    loadDashboard().then(() => showScreen("screen-dashboard")).catch(() => showScreen("screen-landing"));
+    // Show the dashboard immediately (optimistic); data streams in after.
+    // If the token turns out to be invalid, loadDashboard() flips to Sign in.
+    showScreen("screen-dashboard");
+    loadDashboard().catch(() => showScreen("screen-landing"));
   } else {
     showScreen("screen-landing");
   }
+
+  // Drop the boot splash now that a screen has been chosen.
+  document.documentElement.classList.remove("booting");
+  const splash = document.getElementById("bootSplash");
+  if (splash) splash.style.display = "none";
 });

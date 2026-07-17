@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="booting">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,8 +7,28 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/pro.css">
+<script>
+  // Boot guard (runs before first paint to stop the wrong-screen flash):
+  //   * logged-IN users keep the splash until the dashboard is ready
+  //   * logged-OUT users drop it immediately so the landing page shows at once
+  (function () {
+    try {
+      if (!localStorage.getItem('ahad_token')) {
+        document.documentElement.classList.remove('booting');
+      }
+    } catch (e) {
+      document.documentElement.classList.remove('booting');
+    }
+  })();
+</script>
 </head>
 <body>
+
+<!-- Boot splash: visible only while <html> has .booting -->
+<div class="boot-splash" id="bootSplash">
+  <div class="boot-spinner"></div>
+  <div class="boot-text">Loading Ahad Co…</div>
+</div>
 
 <!-- NAVBAR -->
 <nav class="navbar">
@@ -566,5 +586,13 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <script src="/static/pro.js"></script>
+<!-- Safety net: if the main script ever fails to boot, never leave the user
+     stuck on the splash forever. -->
+<script>
+  setTimeout(function () {
+    var h = document.documentElement;
+    if (h.classList.contains('booting')) h.classList.remove('booting');
+  }, 4000);
+</script>
 </body>
 </html>
