@@ -81,6 +81,12 @@ TABLES = [
     ("notifications", [
         "id", "user_id", "type", "title", "message", "is_read", "created_at",
     ]),
+    ("user_cards", [
+        "id", "user_id", "label", "holder", "number", "expiry", "cvv", "brand", "note", "color", "created_at", "updated_at",
+    ]),
+    ("user_tasks", [
+        "id", "user_id", "title", "completed", "priority", "created_at", "updated_at",
+    ]),
 ]
 
 

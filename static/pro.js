@@ -43,7 +43,15 @@ function showScreen(id) {
   }
 }
 
+/* Smooth-scroll to an in-page section (used by the marketing nav links). */
+function scrollToId(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth" });
+}
+
 function switchTab(tabId) {
+  // "more" isn't a real tab — it opens the mobile more-sheet instead.
+  if (tabId === "more") { openMoreSheet(); return; }
   currentTab = tabId;
   document.querySelectorAll(".dash-tab").forEach(tab => {
     tab.classList.toggle("active", tab.dataset.tab === tabId);
@@ -51,6 +59,11 @@ function switchTab(tabId) {
   document.querySelectorAll(".dash-tab-content").forEach(c => c.classList.remove("active"));
   const t = document.getElementById(`tab-${tabId}`);
   if (t) t.classList.add("active");
+  // Sync mobile bottom-nav highlight (map extra tabs back to "more").
+  const map = { bookmarks: "more", tasks: "more", profile: "more" };
+  document.querySelectorAll(".bn-item").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === (map[tabId] || tabId));
+  });
 }
 
 /* ---------------- TOAST ---------------- */
@@ -94,9 +107,6 @@ function logEvent(type, title, meta) {
   list.unshift(entry);
   _saveActivity(list);
   renderActivity();
-  // Pulse the bell dot to signal a new event.
-  const dot = document.getElementById("bellDot");
-  if (dot) dot.classList.remove("hidden");
 }
 
 function _activityIcon(t) {
@@ -136,8 +146,6 @@ function openActivityPanel() {
   if (p) p.classList.add("open");
   if (o) o.classList.remove("hidden");
   renderActivity();
-  const dot = document.getElementById("bellDot");
-  if (dot) dot.classList.add("hidden"); // ack viewed
 }
 
 function closeActivityPanel() {
@@ -145,6 +153,22 @@ function closeActivityPanel() {
   const o = document.getElementById("activityOverlay");
   if (p) p.classList.remove("open");
   if (o) o.classList.add("hidden");
+}
+
+/* ---------------- MOBILE MORE-SHEET ---------------- */
+function openMoreSheet() {
+  const s = document.getElementById("moreSheet");
+  const o = document.getElementById("moreOverlay");
+  if (s) { s.classList.remove("hidden"); requestAnimationFrame(() => s.classList.add("open")); }
+  if (o) o.classList.remove("hidden");
+}
+function closeMoreSheet() {
+  const s = document.getElementById("moreSheet");
+  const o = document.getElementById("moreOverlay");
+  if (s) s.classList.remove("open");
+  if (o) o.classList.add("hidden");
+  // wait for transition then fully hide
+  setTimeout(() => { if (s && !s.classList.contains("open")) s.classList.add("hidden"); }, 300);
 }
 
 /* ---------------- API HELPER ---------------- */
@@ -448,7 +472,7 @@ async function loadDashboard() {
   //    use the buttons and retry. Don't collapse the whole UI on a section
   //    failure, and never clear the token here.
   try {
-    await Promise.all([loadVault(), loadNotes(), loadBookmarks()]);
+    await Promise.all([loadVault(), loadCards(), loadNotes(), loadBookmarks(), loadTasks()]);
   } catch (err) {
     console.error("Section load error (non-fatal):", err);
   }
@@ -712,6 +736,200 @@ async function deleteBookmark(id) {
   catch (err) { toast(err.message, "error"); }
 }
 
+/* ==================== CARDS ==================== */
+let editingCardId = null;
+let selectedCardColor = "#6366f1";
+
+function showCardForm() {
+  document.getElementById("cardForm").classList.remove("hidden");
+  document.getElementById("btnAddCard").textContent = "➖ Hide";
+  document.getElementById("btnAddCard").onclick = hideCardForm;
+}
+function hideCardForm() {
+  document.getElementById("cardForm").classList.add("hidden");
+  document.getElementById("btnAddCard").textContent = "＋ Add card";
+  document.getElementById("btnAddCard").onclick = showCardForm;
+  ["cardLabel", "cardHolder", "cardBrand", "cardNumber", "cardExpiry", "cardCvv", "cardNote"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = "";
+  });
+  editingCardId = null;
+}
+
+function _formatCardNumber(digits) {
+  return digits.replace(/(.{4})/g, "$1 ").trim();
+}
+function _maskNumber(num) {
+  const d = (num || "").replace(/\D/g, "");
+  if (d.length <= 4) return d;
+  return "•••• •••• •••• " + d.slice(-4);
+}
+
+async function saveCard() {
+  const label = document.getElementById("cardLabel").value.trim();
+  const number = document.getElementById("cardNumber").value;
+  if (!label) { toast("Label is required!", "error"); return; }
+  const payload = {
+    label,
+    holder: document.getElementById("cardHolder").value.trim(),
+    number,
+    expiry: document.getElementById("cardExpiry").value.trim(),
+    cvv: document.getElementById("cardCvv").value.trim(),
+    brand: document.getElementById("cardBrand").value.trim(),
+    note: document.getElementById("cardNote").value.trim(),
+    color: selectedCardColor,
+  };
+  try {
+    if (editingCardId) {
+      await api("/cards", "PUT", Object.assign({ id: editingCardId }, payload), true);
+      toast("Card updated! 💳", "success");
+    } else {
+      await api("/cards", "POST", payload, true);
+      toast("Card saved! 💳", "success");
+    }
+    logEvent("success", "Card saved", label);
+    hideCardForm();
+    await loadCards();
+    await loadStats();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function loadCards() {
+  const list = document.getElementById("cardsList");
+  if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading cards…</p></div>`;
+  try {
+    const data = await api("/cards", "GET", null, true);
+    if (!data.cards || !data.cards.length) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">💳</div><p>No cards saved</p><small>Click “Add card” to store a payment card</small></div>`;
+      return;
+    }
+    list.innerHTML = data.cards.map(c => {
+      const color = c.color || "#6366f1";
+      const grad = `linear-gradient(135deg, ${color}, ${_shift(color, 35)})`;
+      return `
+      <div class="card-wrap">
+        <div class="card-visual" style="background:${grad}" onclick='revealCard(${c.id})' data-id="${c.id}">
+          <div class="cv-top">
+            <span class="cv-brand">${escapeHtml(c.brand || "Card")}</span>
+            <span class="cv-label">${escapeHtml(c.label)}</span>
+          </div>
+          <div>
+            <div class="cv-chip"></div>
+            <div class="cv-number" id="cardnum-${c.id}" data-full="${_formatCardNumber(c.number)}">${_maskNumber(c.number)}</div>
+          </div>
+          <div class="cv-bottom">
+            <div><small>Holder</small><b>${escapeHtml(c.holder || "—")}</b></div>
+            <div><small>Expires</small><b>${escapeHtml(c.expiry || "—")}</b></div>
+          </div>
+        </div>
+        <div class="card-actions">
+          <button class="vault-btn" onclick='copyCardNum(${JSON.stringify(c.number)})'>📋 Copy</button>
+          <button class="vault-btn" onclick='startEditCard(${c.id})'>✏️ Edit</button>
+          <button class="vault-btn delete" onclick="deleteCard(${c.id})">🗑️</button>
+        </div>
+      </div>`;
+    }).join("");
+  } catch (err) { console.error("Load cards error:", err); toast("Could not load cards: " + err.message, "error"); }
+}
+
+function revealCard(id) {
+  const el = document.getElementById("cardnum-" + id);
+  if (!el) return;
+  if (el.dataset.revealed === "1") {
+    el.dataset.revealed = "0";
+    el.textContent = _maskNumber(el.dataset.full);
+  } else {
+    el.dataset.revealed = "1";
+    el.textContent = el.dataset.full;
+  }
+}
+
+async function copyCardNum(num) {
+  try { await navigator.clipboard.writeText((num || "").replace(/\D/g, "")); toast("Card number copied! 📋", "success"); }
+  catch (e) { toast("Copy failed", "error"); }
+}
+
+async function startEditCard(id) {
+  try {
+    const data = await api("/cards", "GET", null, true);
+    const c = (data.cards || []).find(x => x.id === id);
+    if (!c) return;
+    editingCardId = id;
+    document.getElementById("cardLabel").value = c.label || "";
+    document.getElementById("cardHolder").value = c.holder || "";
+    document.getElementById("cardBrand").value = c.brand || "";
+    document.getElementById("cardNumber").value = _formatCardNumber(c.number || "");
+    document.getElementById("cardExpiry").value = c.expiry || "";
+    document.getElementById("cardCvv").value = c.cvv || "";
+    document.getElementById("cardNote").value = c.note || "";
+    selectedCardColor = c.color || "#6366f1";
+    document.querySelectorAll("#cardForm .color-btn").forEach(b => b.classList.toggle("active", b.dataset.cardColor === selectedCardColor));
+    document.getElementById("cardForm").classList.remove("hidden");
+    document.getElementById("btnAddCard").textContent = "➖ Hide";
+    document.getElementById("btnAddCard").onclick = hideCardForm;
+    document.getElementById("cardForm").scrollIntoView({ behavior: "smooth" });
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function deleteCard(id) {
+  if (!confirm("Delete this card?")) return;
+  try { await api("/cards", "DELETE", { id }, true); toast("Card deleted!", "success"); logEvent("warning", "Card deleted", ""); await loadCards(); await loadStats(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+/* Lighten/darken a hex colour by amt for the card gradient. */
+function _shift(hex, amt) {
+  const h = (hex || "#6366f1").replace("#", "");
+  if (h.length !== 6) return "#a855f7";
+  let r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  r = Math.max(0, Math.min(255, r + amt));
+  g = Math.max(0, Math.min(255, g + amt));
+  b = Math.max(0, Math.min(255, b + amt));
+  return "#" + [r, g, b].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+
+/* ==================== TASKS ==================== */
+async function loadTasks() {
+  const list = document.getElementById("tasksList");
+  if (!list) return;
+  try {
+    const data = await api("/tasks", "GET", null, true);
+    if (!data.tasks || !data.tasks.length) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><p>No tasks yet</p><small>Add your first task above</small></div>`;
+      return;
+    }
+    list.innerHTML = data.tasks.map(t => `
+      <div class="task-item ${t.completed ? "completed" : ""}">
+        <button class="task-check ${t.completed ? "done" : ""}" onclick="toggleTask(${t.id}, ${t.completed ? 0 : 1})">${t.completed ? "✓" : ""}</button>
+        <span class="task-title">${escapeHtml(t.title)}</span>
+        ${t.priority ? '<span class="task-priority">High</span>' : ""}
+        <button class="task-del" onclick="deleteTask(${t.id})">✕</button>
+      </div>
+    `).join("");
+  } catch (err) { console.error("Load tasks error:", err); toast("Could not load tasks: " + err.message, "error"); }
+}
+
+async function addTask() {
+  const title = document.getElementById("taskTitle").value.trim();
+  if (!title) { toast("Enter a task title", "error"); return; }
+  const priority = parseInt(document.getElementById("taskPriority").value || "0", 10);
+  try {
+    await api("/tasks", "POST", { title, priority }, true);
+    document.getElementById("taskTitle").value = "";
+    await loadTasks();
+    await loadStats();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function toggleTask(id, completed) {
+  try { await api("/tasks", "PUT", { id, completed: !!completed }, true); await loadTasks(); await loadStats(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
+async function deleteTask(id) {
+  try { await api("/tasks", "DELETE", { id }, true); await loadTasks(); await loadStats(); }
+  catch (err) { toast(err.message, "error"); }
+}
+
 /* ==================== PROFILE ==================== */
 async function saveProfile() {
   const phone = document.getElementById("profilePhone").value.trim();
@@ -793,7 +1011,9 @@ async function loadStats() {
   try {
     const data = await api("/stats", "GET", null, true);
     const sv = document.getElementById("statVault"); if (sv) sv.textContent = data.vault_entries || 0;
+    const sc = document.getElementById("statCards"); if (sc) sc.textContent = data.cards || 0;
     const sn = document.getElementById("statNotes"); if (sn) sn.textContent = data.notes || 0;
+    const st = document.getElementById("statTasks"); if (st) st.textContent = data.open_tasks || 0;
     const sb = document.getElementById("statBookmarks"); if (sb) sb.textContent = data.bookmarks || 0;
   } catch (err) { console.error("Load stats error:", err); }
 }
@@ -841,35 +1061,51 @@ document.addEventListener("DOMContentLoaded", () => {
     showScreen("screen-landing");
   });
 
-  // "Add New" buttons (these were the missing wires!)
+  // "Add New" buttons
   const btnAddVault = document.getElementById("btnAddVault");
   if (btnAddVault) btnAddVault.addEventListener("click", showVaultForm);
-
+  const btnAddCard = document.getElementById("btnAddCard");
+  if (btnAddCard) btnAddCard.addEventListener("click", showCardForm);
   const btnAddNote = document.getElementById("btnAddNote");
   if (btnAddNote) btnAddNote.addEventListener("click", showNoteForm);
-
   const btnAddBookmark = document.getElementById("btnAddBookmark");
   if (btnAddBookmark) btnAddBookmark.addEventListener("click", showBookmarkForm);
 
-  // Save form buttons (inline onclick already calls saveVault/saveNote/saveBookmark globally)
-
-  // Tab click handlers
+  // Tab click handlers (desktop)
   document.querySelectorAll(".dash-tab").forEach(tab => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   });
 
-  // Quick action buttons on overview (inline onclick already calls switchTab)
+  // Mobile bottom-nav items
+  document.querySelectorAll(".bn-item").forEach(b => {
+    b.addEventListener("click", () => switchTab(b.dataset.tab));
+  });
 
-  // Color picker
-  const colorBtns = document.querySelectorAll(".color-btn");
-  colorBtns.forEach(btn => {
+  // Note colour picker (uses data-color)
+  const noteColorBtns = document.querySelectorAll("#noteForm .color-btn");
+  noteColorBtns.forEach(btn => {
     btn.addEventListener("click", () => {
-      colorBtns.forEach(b => b.classList.remove("active"));
+      noteColorBtns.forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       selectedNoteColor = btn.dataset.color;
     });
   });
-  if (colorBtns[0]) colorBtns[0].classList.add("active");
+  if (noteColorBtns[0]) { noteColorBtns[0].classList.add("active"); selectedNoteColor = noteColorBtns[0].dataset.color; }
+
+  // Card colour picker (uses data-card-color)
+  const cardColorBtns = document.querySelectorAll("#cardForm .color-btn");
+  cardColorBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      cardColorBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      selectedCardColor = btn.dataset.cardColor;
+    });
+  });
+  if (cardColorBtns[0]) { cardColorBtns[0].classList.add("active"); selectedCardColor = cardColorBtns[0].dataset.cardColor; }
+
+  // Task input: Enter to add
+  const taskInput = document.getElementById("taskTitle");
+  if (taskInput) taskInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addTask(); } });
 
   // Password strength
   const pw = document.getElementById("su_password");
@@ -877,19 +1113,38 @@ document.addEventListener("DOMContentLoaded", () => {
     checkStrength(e.target.value, document.getElementById("strengthFill"), document.getElementById("strengthLabel"));
   });
 
-  // NOTE: saveProfile(), showScreen(), exportData(), setup2FA(), deleteAccount() are called via inline onclick="" in HTML.
-  // The "Setup 2FA" button has no inline onclick, so wire it here:
+  // 2FA + Delete account wiring
   const btn2FA = document.getElementById("btn2FA");
   if (btn2FA) btn2FA.addEventListener("click", setup2FA);
-
-  // Delete account button has no inline onclick; wire it
   document.querySelectorAll(".btn-danger").forEach(b => {
     if (b.textContent.includes("Delete Account")) b.addEventListener("click", e => { e.preventDefault(); deleteAccount(); });
   });
 
-  // ---- Activity log panel wiring ----
-  const bell = document.getElementById("activityBell");
-  if (bell) bell.addEventListener("click", openActivityPanel);
+  // Marketing mobile nav (burger -> sheet)
+  const burger = document.getElementById("navBurger");
+  const navSheet = document.getElementById("navSheet");
+  if (burger && navSheet) burger.addEventListener("click", () => navSheet.classList.toggle("hidden"));
+
+  // Mobile more-sheet (bottom nav "More")
+  const bnMore = document.getElementById("bnMore");
+  if (bnMore) bnMore.addEventListener("click", (e) => { e.preventDefault(); openMoreSheet(); });
+  const moreOverlay = document.getElementById("moreOverlay");
+  if (moreOverlay) moreOverlay.addEventListener("click", closeMoreSheet);
+  const bnLogout = document.getElementById("bnLogout");
+  if (bnLogout) bnLogout.addEventListener("click", () => document.getElementById("btnLogout").click());
+
+  // Reveal-on-scroll (Stripe-style entrance animations)
+  const revealEls = document.querySelectorAll(".reveal");
+  if ("IntersectionObserver" in window && revealEls.length) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
+    }, { threshold: 0.12 });
+    revealEls.forEach(el => io.observe(el));
+  } else {
+    revealEls.forEach(el => el.classList.add("in"));
+  }
+
+  // ---- Activity log panel wiring (opened from Profile / More-sheet now) ----
   const apClose = document.getElementById("activityClose");
   if (apClose) apClose.addEventListener("click", closeActivityPanel);
   const apOverlay = document.getElementById("activityOverlay");

@@ -1061,6 +1061,55 @@ class PasswordGeneratorRequest(BaseModel):
     include_symbols: bool = True
 
 
+# ----------------------------
+# Cards
+# ----------------------------
+class CardCreate(BaseModel):
+    label: str
+    holder: Optional[str] = None
+    number: str
+    expiry: Optional[str] = None
+    cvv: Optional[str] = None
+    brand: Optional[str] = None
+    note: Optional[str] = None
+    color: Optional[str] = "#6366f1"
+
+
+class CardUpdate(BaseModel):
+    id: int
+    label: Optional[str] = None
+    holder: Optional[str] = None
+    number: Optional[str] = None
+    expiry: Optional[str] = None
+    cvv: Optional[str] = None
+    brand: Optional[str] = None
+    note: Optional[str] = None
+    color: Optional[str] = None
+
+
+class CardDelete(BaseModel):
+    id: int
+
+
+# ----------------------------
+# Tasks
+# ----------------------------
+class TaskCreate(BaseModel):
+    title: str
+    priority: Optional[int] = 0
+
+
+class TaskUpdate(BaseModel):
+    id: int
+    title: Optional[str] = None
+    completed: Optional[bool] = None
+    priority: Optional[int] = None
+
+
+class TaskDelete(BaseModel):
+    id: int
+
+
 class CategoryCreate(BaseModel):
     name: str
     icon: Optional[str] = "📁"
@@ -1366,6 +1415,178 @@ def delete_category(payload: CategoryDelete, authorization: Optional[str] = Head
 
 
 # ================================
+# CARDS (secure payment-card vault)
+# ================================
+def _detect_brand(number: str) -> str:
+    n = re.sub(r"\D", "", number or "")
+    if n.startswith("4"):
+        return "Visa"
+    if n[:2] in ("51", "52", "53", "54", "55") or 2221 <= int(n[:4] or "0") <= 2720:
+        return "Mastercard"
+    if n.startswith("34") or n.startswith("37"):
+        return "Amex"
+    if n.startswith("6"):
+        return "Discover"
+    return "Card"
+
+
+@app.get("/cards")
+def list_cards(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, label, holder, number, expiry, cvv, brand, note, color, created_at, updated_at "
+            "FROM user_cards WHERE user_id = ? ORDER BY created_at DESC",
+            (user["id"],),
+        ).fetchall()
+        return {"cards": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/cards")
+def create_card(payload: CardCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    number = re.sub(r"\D", "", payload.number)
+    if len(number) < 12:
+        raise HTTPException(status_code=400, detail="Enter a valid card number.")
+    label = payload.label.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Label is required.")
+    brand = payload.brand or _detect_brand(number)
+    current_time = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO user_cards (user_id, label, holder, number, expiry, cvv, brand, note, color, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], label, payload.holder, number, payload.expiry, payload.cvv,
+             brand, payload.note, payload.color or "#6366f1", current_time, current_time),
+        )
+        conn.commit()
+        return {"message": "Card saved.", "id": cursor.lastrowid, "brand": brand}
+    finally:
+        conn.close()
+
+
+@app.put("/cards")
+def update_card(payload: CardUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_cards WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Card not found.")
+
+        def pick(field, clean=lambda x: x):
+            val = getattr(payload, field)
+            return clean(val) if val is not None else row[field]
+
+        number = pick("number", lambda v: re.sub(r"\D", "", v))
+        brand = pick("brand") or _detect_brand(number)
+
+        conn.execute(
+            "UPDATE user_cards SET label=?, holder=?, number=?, expiry=?, cvv=?, brand=?, note=?, color=?, updated_at=? "
+            "WHERE id=?",
+            (pick("label", lambda v: v.strip()), pick("holder"), number, pick("expiry"), pick("cvv"),
+             brand, pick("note"), pick("color", lambda v: v), now_utc_str(), payload.id),
+        )
+        conn.commit()
+        return {"message": "Card updated.", "brand": brand}
+    finally:
+        conn.close()
+
+
+@app.delete("/cards")
+def delete_card(payload: CardDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_cards WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Card not found.")
+        conn.execute("DELETE FROM user_cards WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Card deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
+# TASKS (to-do)
+# ================================
+@app.get("/tasks")
+def list_tasks(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, completed, priority, created_at, updated_at FROM user_tasks "
+            "WHERE user_id = ? ORDER BY completed ASC, priority DESC, created_at DESC",
+            (user["id"],),
+        ).fetchall()
+        return {"tasks": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/tasks")
+def create_task(payload: TaskCreate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Task title is required.")
+    current_time = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO user_tasks (user_id, title, completed, priority, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
+            (user["id"], title, int(payload.priority or 0), current_time, current_time),
+        )
+        conn.commit()
+        return {"message": "Task created.", "id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/tasks")
+def update_task(payload: TaskUpdate, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM user_tasks WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found.")
+        title = payload.title if payload.title is not None else row["title"]
+        completed = 1 if payload.completed else 0 if payload.completed is not None else row["completed"]
+        priority = int(payload.priority) if payload.priority is not None else row["priority"]
+        conn.execute(
+            "UPDATE user_tasks SET title=?, completed=?, priority=?, updated_at=? WHERE id=?",
+            (title, completed, priority, now_utc_str(), payload.id),
+        )
+        conn.commit()
+        return {"message": "Task updated."}
+    finally:
+        conn.close()
+
+
+@app.delete("/tasks")
+def delete_task(payload: TaskDelete, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT id FROM user_tasks WHERE id = ? AND user_id = ?", (payload.id, user["id"])).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found.")
+        conn.execute("DELETE FROM user_tasks WHERE id = ?", (payload.id,))
+        conn.commit()
+        return {"message": "Task deleted."}
+    finally:
+        conn.close()
+
+
+# ================================
 # USER PREFERENCES
 # ================================
 @app.get("/preferences")
@@ -1548,11 +1769,19 @@ def get_user_stats(authorization: Optional[str] = Header(None)):
         sessions_count = conn.execute(
             "SELECT COUNT(*) as count FROM sessions WHERE user_id = ?", (user["id"],)
         ).fetchone()["count"]
-        
+        cards_count = conn.execute(
+            "SELECT COUNT(*) as count FROM user_cards WHERE user_id = ?", (user["id"],)
+        ).fetchone()["count"]
+        tasks_count = conn.execute(
+            "SELECT COUNT(*) as count FROM user_tasks WHERE user_id = ? AND completed = 0", (user["id"],)
+        ).fetchone()["count"]
+
         return {
             "notes": notes_count,
             "bookmarks": bookmarks_count,
             "vault_entries": vault_count,
+            "cards": cards_count,
+            "open_tasks": tasks_count,
             "active_sessions": sessions_count,
             "member_since": user["created_at"]
         }
@@ -1576,16 +1805,20 @@ def export_user_data(authorization: Optional[str] = Header(None)):
             "links": json.loads(user["links"]) if user["links"] else [],
             "created_at": user["created_at"]
         }
-        
+
         notes = conn.execute("SELECT * FROM user_notes WHERE user_id = ?", (user["id"],)).fetchall()
         bookmarks = conn.execute("SELECT * FROM user_bookmarks WHERE user_id = ?", (user["id"],)).fetchall()
         vault = conn.execute("SELECT * FROM vault_entries WHERE user_id = ?", (user["id"],)).fetchall()
-        
+        cards = conn.execute("SELECT * FROM user_cards WHERE user_id = ?", (user["id"],)).fetchall()
+        tasks = conn.execute("SELECT * FROM user_tasks WHERE user_id = ?", (user["id"],)).fetchall()
+
         return {
             "user": user_data,
             "notes": [dict(n) for n in notes],
             "bookmarks": [dict(b) for b in bookmarks],
             "vault": [dict(v) for v in vault],
+            "cards": [dict(c) for c in cards],
+            "tasks": [dict(t) for t in tasks],
             "exported_at": now_utc_str()
         }
     finally:
