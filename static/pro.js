@@ -210,17 +210,39 @@ function escapeHtml(text) {
 }
 
 /* ---------------- PREMIUM EMOJI HELPER ----------------
-   Wrap an emoji in a Telegram-Premium-style animated span.
-   anim: "premium" | "secure" | "fire" | "ice" | "gold" | "teal" | "float" |
-          "wiggle" | "pop" | "glow" | "rainbow" | "spin"  (default "premium")
-   ep("🔥")                       -> full premium (sparkle+glow+float+pop)
-   ep("🔐", "secure")             -> secure glow
-   ep("⭐", "gold")               -> gold sparkle
-   ep("💎", "ice")                -> ice/teal glow
+   Each emoji becomes a choreographed scene (see static/emoji.css):
+   ✅ check = draw + starburst + bg flash, 💣 bomb = fuse+explosion,
+   🔥 fire = flame flicker + embers, 💎 diamond = 3D shine, ⭐ star = light
+   rays, ❤️ heart = double-beat, 🎉 party = confetti, 🚀 rocket = launch,
+   👍 thumbs = bounce+sparkle, 💯 = bounce+stars, 🔐 secure = shimmer,
+   🪙 coin = 3D flip, ⚡ bolt = strobe, 🌈 rainbow = hue, ✉️ teal = glow.
+   ep("🔥")            -> auto scene from the glyph
+   ep("🔐","secure")   -> force a scene
 */
+const _EMOJI_SCENE = {
+  "✅":"check","✔️":"check","☑️":"check","🟢":"check",
+  "🔥":"fire",
+  "💣":"bomb","💥":"bomb",
+  "💎":"diamond","🔷":"diamond",
+  "⭐":"star","🌟":"star","✨":"star",
+  "❤️":"heart","❤":"heart","💗":"heart","💖":"heart","💝":"heart","💕":"heart",
+  "🎉":"party","🎊":"party",
+  "🚀":"rocket",
+  "👍":"thumbs","👏":"thumbs","🙌":"thumbs","🤝":"thumbs",
+  "💯":"hundred",
+  "🔐":"secure","🔒":"secure","🛡️":"secure","🛡":"secure","🔑":"secure","🔏":"secure",
+  "🪙":"coin","💰":"coin","💵":"coin","💳":"coin",
+  "⚡":"bolt",
+  "🌈":"rainbow",
+  "✉️":"teal","📧":"teal","📨":"teal","📶":"teal","💧":"teal","❄️":"teal",
+  "🔔":"star","🌙":"premium","☀️":"premium","🚪":"fire","⚠️":"fire",
+  "📝":"premium","🔖":"premium","👥":"premium","🪪":"premium","🖥️":"premium","🌱":"teal","📊":"teal","📅":"teal","📱":"premium","🗄️":"premium",
+};
 function ep(emoji, anim) {
-  const cls = anim ? ("ep ep-" + anim) : "ep ep-premium";
-  return '<span class="' + cls + '">' + (emoji || "") + "</span>";
+  const scene = anim || _EMOJI_SCENE[emoji] || "premium";
+  // glyph wrapped in <i> so scene CSS (.epx-* > *) can move the actor
+  // independently of the ::before/::after effect layers.
+  return '<span class="epx epx-' + scene + '"><i style="font-style:normal">' + (emoji || "") + "</i></span>";
 }
 
 /* ---------------- PASSWORD STRENGTH ---------------- */
