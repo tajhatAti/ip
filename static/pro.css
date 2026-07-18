@@ -553,53 +553,184 @@ html.booting .auth, html.booting .dashboard { display: none !important; }
 @keyframes slideT { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================
-   CODE WORKSPACE (full IDE)
+   CODE STUDIO — completely redesigned, distinct identity
+   Warm dark canvas, pill actions, floating preview panel,
+   line-number gutter. Nothing like the old IDE look.
    ============================================================ */
-.code-workspace { padding-top: 6px !important; }
-.ide {
-  background: #0a0c12; border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
-  box-shadow: var(--shadow);
+.code-studio {
+  padding: 0 !important;
+  max-width: none !important;
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  background: #14110f;
+  border-radius: 0;
+  overflow: hidden;
 }
-.ide-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; background: #0d1018; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.ide-left { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 200px; }
-.ide-logo { font-family: var(--mono); font-weight: 700; color: var(--brand-1); font-size: 15px; padding: 2px 7px; background: rgba(99,102,241,.14); border-radius: 7px; }
-.ide-title { flex: 1; min-width: 120px; background: none; border: 1px solid transparent; color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600; padding: 7px 10px; border-radius: 8px; outline: none; transition: border-color .2s; }
-.ide-title:hover, .ide-title:focus { border-color: var(--border-strong); background: rgba(0,0,0,.25); }
-.ide-lang { background: rgba(0,0,0,.3); border: 1px solid var(--border-strong); color: var(--text); font-family: var(--mono); font-size: 12px; padding: 7px 10px; border-radius: 8px; cursor: pointer; outline: none; max-width: 130px; }
-.ide-right { display: flex; gap: 6px; flex-wrap: wrap; }
-.ide-btn { padding: 8px 13px; background: rgba(255,255,255,.06); border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); font-family: inherit; font-weight: 600; font-size: 12.5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
-.ide-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
-.ide-btn.grad { background: var(--grad); border-color: transparent; color: #fff; }
-.ide-btn.ghost { background: transparent; }
 
-.ide-split { display: flex; height: 60vh; min-height: 380px; }
-.ide-editor { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.ide-divider { width: 6px; background: var(--border); cursor: col-resize; flex-shrink: 0; transition: background .2s; }
-.ide-divider:hover, .ide-divider.dragging { background: var(--brand-1); }
-.ide-preview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.ide-pane-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--muted); background: #0d1018; border-bottom: 1px solid var(--border); font-family: var(--mono); }
-.ide-meta { font-size: 11px; color: var(--muted-2); font-weight: 400; }
-.ide-textarea { flex: 1; width: 100%; resize: none; border: none; outline: none; padding: 18px; font-family: var(--mono); font-size: 13.5px; line-height: 1.7; color: #d4d8e8; background: #0a0c12; tab-size: 2; white-space: pre; overflow: auto; }
-.ide-textarea::placeholder { color: var(--muted-2); }
-.ide-preview-frame-wrap { flex: 1; position: relative; background: #fff; display: flex; }
-.ide-iframe { flex: 1; width: 100%; border: none; background: #fff; }
-.ide-console { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: #0a0c12; border-top: 1px solid var(--border-strong); display: flex; flex-direction: column; }
-.ide-console .ic-head { padding: 6px 12px; font-family: var(--mono); font-size: 11px; color: var(--muted-2); border-bottom: 1px solid var(--border); }
-.ide-console .ic-body { flex: 1; overflow: auto; padding: 8px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: #aeb4c8; }
-.ide-console .ic-body .ln { white-space: pre-wrap; word-break: break-word; }
-.ide-console .ic-body .err { color: var(--error); }
-.ide-console .ic-body .info { color: var(--success); }
+/* ---- header ---- */
+.cs-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  background: #1c1815;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.cs-brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px; }
+.cs-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  display: grid; place-items: center;
+  font-family: var(--mono); font-weight: 800; font-size: 12px; color: #fff;
+  flex-shrink: 0;
+}
+.cs-name {
+  flex: 1; min-width: 100px;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06);
+  color: #f3eee8; font-family: inherit; font-size: 14px; font-weight: 600;
+  padding: 8px 12px; border-radius: 10px; outline: none;
+  transition: border-color .2s;
+}
+.cs-name:focus { border-color: #f59e0b; }
+.cs-name::placeholder { color: #6b6157; }
+.cs-pill {
+  font-family: var(--mono); font-size: 10.5px; color: #8a7e72;
+  background: rgba(255,255,255,.04); padding: 4px 9px; border-radius: 20px;
+  white-space: nowrap;
+}
+.cs-lang {
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+  color: #f3eee8; font-family: var(--mono); font-size: 12px;
+  padding: 7px 12px; border-radius: 10px; cursor: pointer; outline: none;
+  transition: border-color .2s;
+}
+.cs-lang:hover { border-color: #f59e0b; }
+.cs-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.cs-act {
+  padding: 8px 14px; border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px; background: rgba(255,255,255,.04);
+  color: #c9bdb1; font-family: inherit; font-weight: 600; font-size: 12.5px;
+  cursor: pointer; transition: all .2s cubic-bezier(0.22,1,0.36,1); white-space: nowrap;
+}
+.cs-act:hover { border-color: #f59e0b; color: #f3eee8; transform: translateY(-1px); }
+.cs-act:active { transform: scale(.96); transition-duration: .1s; }
+.cs-act.primary {
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  border-color: transparent; color: #fff;
+}
+.cs-act.primary:hover { box-shadow: 0 6px 18px rgba(245,158,11,.35); }
 
-.ide-list-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 2px 12px; }
-.ide-list-head h3 { font-size: 15px; font-weight: 700; }
+/* ---- canvas: editor fills most of the screen ---- */
+.cs-canvas { flex: 1; display: flex; min-height: 0; position: relative; }
+.cs-editor-zone {
+  flex: 1; display: flex; min-width: 0;
+  background: #14110f; position: relative; overflow: hidden;
+}
+.cs-gutter {
+  width: 46px; flex-shrink: 0;
+  background: #110e0c; border-right: 1px solid rgba(255,255,255,.04);
+  font-family: var(--mono); font-size: 13px; line-height: 1.75;
+  color: #4a423a; text-align: right;
+  padding: 20px 12px 20px 0;
+  overflow: hidden; white-space: pre; user-select: none;
+}
+.cs-code-input {
+  flex: 1; resize: none; border: none; outline: none;
+  padding: 20px 24px; font-family: var(--mono);
+  font-size: 14px; line-height: 1.75; color: #e8ddd0;
+  background: transparent; tab-size: 2; white-space: pre;
+  overflow: auto; caret-color: #f59e0b;
+}
+.cs-code-input::placeholder { color: #4a423a; }
+.cs-code-input::selection { background: rgba(245,158,11,.2); }
 
+/* ---- floating preview panel (slides over from right) ---- */
+.cs-preview-zone {
+  width: 0; min-width: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  background: #1c1815; border-left: 1px solid rgba(255,255,255,.06);
+  transition: width .35s cubic-bezier(0.22,1,0.36,1), min-width .35s cubic-bezier(0.22,1,0.36,1);
+  flex-shrink: 0;
+}
+.cs-preview-zone.open { width: 45%; min-width: 320px; }
+.cs-preview-top {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.06);
+  font-family: var(--mono); font-size: 11.5px; color: #8a7e72;
+}
+.cs-close-prev {
+  background: none; border: none; color: #6b6157; font-size: 14px;
+  cursor: pointer; padding: 4px 8px; border-radius: 6px;
+}
+.cs-close-prev:hover { color: #f3eee8; background: rgba(255,255,255,.06); }
+.cs-preview-body { flex: 1; position: relative; background: #fff; overflow: hidden; }
+.cs-iframe { width: 100%; height: 100%; border: none; background: #fff; }
+.cs-console {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 40%;
+  background: #110e0c; border-top: 1px solid rgba(255,255,255,.08);
+  display: flex; flex-direction: column;
+}
+.cs-con-head {
+  padding: 6px 12px; font-family: var(--mono); font-size: 10.5px;
+  color: #6b6157; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.cs-con-body {
+  flex: 1; overflow: auto; padding: 8px 12px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.6; color: #a89888;
+}
+.cs-con-body .ln { white-space: pre-wrap; word-break: break-word; }
+.cs-con-body .err { color: #f87171; }
+.cs-con-body .info { color: #34d399; }
+
+/* ---- saved projects ---- */
+.cs-projects {
+  flex-shrink: 0; max-height: 200px; overflow-y: auto;
+  padding: 14px 16px; background: #1c1815;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+.cs-proj-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cs-proj-head h3 { font-size: 13px; font-weight: 700; color: #c9bdb1; }
+.cs-proj-count {
+  font-family: var(--mono); font-size: 10.5px; color: #6b6157;
+  background: rgba(255,255,255,.04); padding: 3px 8px; border-radius: 20px;
+}
+
+/* snippet cards in the studio (warm tone) */
+.code-studio .snippet-item {
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; margin-bottom: 8px; overflow: hidden;
+  transition: border-color .2s;
+}
+.code-studio .snippet-item:hover { border-color: rgba(245,158,11,.2); }
+.code-studio .snippet-top { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+.code-studio .snippet-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.code-studio .snippet-head h4 { font-size: 13px; color: #e8ddd0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-studio .snippet-lang { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; padding: 3px 8px; background: rgba(245,158,11,.12); color: #f59e0b; border-radius: 20px; flex-shrink: 0; }
+.code-studio .snippet-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+.code-studio .snippet-actions .vault-btn {
+  padding: 5px 10px; font-size: 11.5px;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 7px; color: #8a7e72;
+}
+.code-studio .snippet-actions .vault-btn:hover { border-color: #f59e0b; color: #f3eee8; }
+.code-studio .snippet-code { margin: 0; padding: 10px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.5; background: #110e0c; color: #6b6157; overflow-x: auto; border-top: 1px solid rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.03); white-space: pre; }
+.code-studio .snippet-code code { font-family: inherit; }
+.code-studio .snippet-share-url { display: flex; align-items: center; gap: 8px; padding: 10px 14px; flex-wrap: wrap; }
+.code-studio .snippet-share-url span { font-size: 11.5px; color: #6b6157; }
+.code-studio .snippet-share-url code { font-family: var(--mono); font-size: 11px; color: #f59e0b; background: rgba(245,158,11,.06); padding: 4px 8px; border-radius: 6px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-studio .snippet-share-url.muted { color: #4a423a; }
+
+/* ---- mobile ---- */
 @media (max-width: 760px) {
-  .ide-split { flex-direction: column; height: auto; }
-  .ide-editor { height: 45vh; }
-  .ide-divider { width: 100%; height: 6px; cursor: row-resize; }
-  .ide-preview { height: 45vh; }
-  .ide-toolbar { padding: 10px; }
-  .ide-right .ide-btn { padding: 8px 10px; font-size: 12px; }
+  .code-studio { height: calc(100vh - 110px); }
+  .cs-header { padding: 8px 12px; }
+  .cs-pill { display: none; }
+  .cs-actions .cs-act { padding: 7px 10px; font-size: 11.5px; }
+  .cs-gutter { display: none; }
+  .cs-code-input { padding: 16px; font-size: 13px; }
+  .cs-preview-zone.open { width: 100%; min-width: 0; position: absolute; inset: 0; z-index: 10; }
+  .cs-projects { max-height: 150px; }
 }
 
 /* ============================================================

@@ -1197,6 +1197,7 @@ function updateEditorMeta() {
   if (!ta || !meta) return;
   const lines = ta.value.split("\n").length;
   meta.textContent = lines + " lines · " + ta.value.length + " chars";
+  updateGutter();
 }
 
 /* Build the srcdoc for the live preview iframe, matching the share page. */
@@ -1377,30 +1378,38 @@ async function copySnippetCode(id) {
 }
 
 /* Draggable split divider between editor and preview. */
+/* Preview panel toggle — slides open/closed from the right. */
+function togglePreviewPanel(open) {
+  const zone = document.getElementById("idePreview");
+  if (!zone) return;
+  if (open === undefined) open = !zone.classList.contains("open");
+  if (open) { zone.classList.add("open"); runLivePreview(); }
+  else { zone.classList.remove("open"); }
+}
+
+/* Update line-number gutter */
+function updateGutter() {
+  const ta = document.getElementById("snippetContent");
+  const gutter = document.getElementById("csGutter");
+  if (!ta || !gutter) return;
+  const lines = ta.value.split("\n").length;
+  let nums = "";
+  for (let i = 1; i <= lines; i++) nums += i + "\n";
+  gutter.textContent = nums;
+}
+
+/* Sync gutter scroll with textarea scroll */
+function initGutterScroll() {
+  const ta = document.getElementById("snippetContent");
+  const gutter = document.getElementById("csGutter");
+  if (!ta || !gutter) return;
+  ta.addEventListener("scroll", () => { gutter.scrollTop = ta.scrollTop; });
+}
+
+/* initIdeDivider is now the close button for the preview panel */
 function initIdeDivider() {
-  const divider = document.getElementById("ideDivider");
-  const split = document.getElementById("ideSplit");
-  if (!divider || !split) return;
-  let dragging = false;
-  const start = (e) => { dragging = true; divider.classList.add("dragging"); document.body.style.userSelect = "none"; e.preventDefault(); };
-  const move = (e) => {
-    if (!dragging) return;
-    const rect = split.getBoundingClientRect();
-    const point = e.touches ? e.touches[0].clientX : e.clientX;
-    const pct = ((point - rect.left) / rect.width) * 100;
-    const clamped = Math.max(20, Math.min(80, pct));
-    const editor = split.querySelector(".ide-editor");
-    const preview = split.querySelector(".ide-preview");
-    if (editor) editor.style.flex = "0 0 " + clamped + "%";
-    if (preview) preview.style.flex = "1 1 auto";
-  };
-  const end = () => { dragging = false; divider.classList.remove("dragging"); document.body.style.userSelect = ""; };
-  divider.addEventListener("mousedown", start);
-  divider.addEventListener("touchstart", start, { passive: false });
-  document.addEventListener("mousemove", move);
-  document.addEventListener("touchmove", move, { passive: false });
-  document.addEventListener("mouseup", end);
-  document.addEventListener("touchend", end);
+  const closeBtn = document.getElementById("ideDivider");
+  if (closeBtn) closeBtn.addEventListener("click", () => togglePreviewPanel(false));
 }
 
 /* ==================== HELPERS ==================== */
@@ -1622,7 +1631,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSaveSnippet = document.getElementById("btnSaveSnippet");
   if (btnSaveSnippet) btnSaveSnippet.addEventListener("click", saveSnippet);
   const btnRunSnippet = document.getElementById("btnRunSnippet");
-  if (btnRunSnippet) btnRunSnippet.addEventListener("click", () => { runLivePreview(); toast("Preview updated ▶", "success"); });
+  if (btnRunSnippet) btnRunSnippet.addEventListener("click", () => { togglePreviewPanel(); });
   const btnFormatSnippet = document.getElementById("btnFormatSnippet");
   if (btnFormatSnippet) btnFormatSnippet.addEventListener("click", formatSnippet);
   const btnShareSnippet = document.getElementById("btnShareSnippet");
@@ -1634,6 +1643,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (snippetContent) {
     snippetContent.addEventListener("input", () => {
       updateEditorMeta();
+      updateGutter();
       clearTimeout(_livePreviewTimer);
       _livePreviewTimer = setTimeout(runLivePreview, 400);
     });
@@ -1652,6 +1662,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const snippetLanguage = document.getElementById("snippetLanguage");
   if (snippetLanguage) snippetLanguage.addEventListener("change", runLivePreview);
   initIdeDivider();
+  initGutterScroll();
   const btnAddNote = document.getElementById("btnAddNote");
   if (btnAddNote) btnAddNote.addEventListener("click", showNoteForm);
   const btnAddBookmark = document.getElementById("btnAddBookmark");

@@ -471,57 +471,67 @@
       <div class="vault-list" id="recoveryList"></div>
     </div>
 
-    <!-- CODE / SNIPPETS — full IDE workspace -->
-    <div class="dash-tab-content code-workspace" id="tab-code">
-      <div class="ide">
-        <!-- IDE toolbar -->
-        <div class="ide-toolbar">
-          <div class="ide-left">
-            <span class="ide-logo">&lt;/&gt;</span>
-            <input type="text" id="snippetTitle" class="ide-title" placeholder="Untitled snippet">
-            <select id="snippetLanguage" class="ide-lang">
-              <option value="html">HTML</option>
-              <option value="css">CSS</option>
-              <option value="javascript">JavaScript</option>
-              <option value="markdown">Markdown</option>
-              <option value="python">Python</option>
-              <option value="text">Plaintext</option>
-              <option value="typescript">TypeScript</option>
-              <option value="json">JSON</option>
-              <option value="bash">Bash</option>
-              <option value="sql">SQL</option>
-              <option value="java">Java</option>
-              <option value="cpp">C / C++</option>
-              <option value="go">Go</option>
-              <option value="php">PHP</option>
-              <option value="ruby">Ruby</option>
-            </select>
+    <!-- CODE STUDIO — entirely redesigned -->
+    <div class="dash-tab-content code-studio" id="tab-code">
+      <!-- Studio header bar -->
+      <div class="cs-header">
+        <div class="cs-brand">
+          <div class="cs-icon">&lt;/&gt;</div>
+          <input type="text" id="snippetTitle" class="cs-name" placeholder="Untitled project">
+          <div class="cs-pill" id="editorMeta">0 lines</div>
+        </div>
+        <select id="snippetLanguage" class="cs-lang">
+          <option value="html">HTML</option>
+          <option value="css">CSS</option>
+          <option value="javascript">JavaScript</option>
+          <option value="markdown">Markdown</option>
+          <option value="python">Python</option>
+          <option value="text">Plaintext</option>
+          <option value="typescript">TypeScript</option>
+          <option value="json">JSON</option>
+          <option value="bash">Bash</option>
+          <option value="sql">SQL</option>
+          <option value="java">Java</option>
+          <option value="cpp">C / C++</option>
+          <option value="go">Go</option>
+          <option value="php">PHP</option>
+          <option value="ruby">Ruby</option>
+        </select>
+        <div class="cs-actions">
+          <button class="cs-act" id="btnNewSnippet" title="New">＋</button>
+          <button class="cs-act" id="btnFormatSnippet" title="Format">Format</button>
+          <button class="cs-act" id="btnRunSnippet" title="Toggle preview">Preview</button>
+          <button class="cs-act" id="btnShareSnippet" title="Publish standalone page">Publish</button>
+          <button class="cs-act primary" id="btnSaveSnippet" title="Save">Save</button>
+        </div>
+      </div>
+      <!-- Canvas: editor takes most of the screen -->
+      <div class="cs-canvas" id="ideSplit">
+        <div class="cs-editor-zone" id="ideEditor">
+          <div class="cs-gutter" id="csGutter"></div>
+          <textarea id="snippetContent" class="cs-code-input" placeholder="// Start coding here...
+// Type HTML, CSS, JS or Markdown — hit Preview to see it live
+// Hit Publish to deploy a standalone static page (like GitHub Pages)
+// Ctrl+Enter = preview · Ctrl+S = save · Tab = 2 spaces" spellcheck="false"></textarea>
+        </div>
+        <!-- Floating preview panel (slides in on demand) -->
+        <div class="cs-preview-zone" id="idePreview">
+          <div class="cs-preview-top">
+            <span id="previewMeta">live preview</span>
+            <button class="cs-close-prev" id="ideDivider" title="Close preview">✕</button>
           </div>
-          <div class="ide-right">
-            <button class="ide-btn" id="btnRunSnippet" title="Run / preview">▶ Run</button>
-            <button class="ide-btn" id="btnFormatSnippet" title="Format">✨ Format</button>
-            <button class="ide-btn" id="btnShareSnippet" title="Publish a standalone static page">🚀 Publish</button>
-            <button class="ide-btn grad" id="btnSaveSnippet" title="Save">💾 Save</button>
-            <button class="ide-btn ghost" id="btnNewSnippet" title="New">＋ New</button>
+          <div class="cs-preview-body" id="previewWrap">
+            <iframe id="livePreview" class="cs-iframe" sandbox="allow-scripts allow-modals"></iframe>
+            <div class="cs-console" id="ideConsole" style="display:none"><div class="cs-con-head">Console</div><div class="cs-con-body" id="icBody"></div></div>
           </div>
         </div>
-        <!-- Split editor + preview -->
-        <div class="ide-split" id="ideSplit">
-          <div class="ide-editor">
-            <div class="ide-pane-head"><span>✏️ Editor</span><span class="ide-meta" id="editorMeta">0 lines · 0 chars</span></div>
-            <textarea id="snippetContent" class="ide-textarea" placeholder="// Write or paste code here, then hit Run…&#10;// HTML, CSS, JS &amp; Markdown preview live on the right and on your share link." spellcheck="false"></textarea>
-          </div>
-          <div class="ide-divider" id="ideDivider"></div>
-          <div class="ide-preview">
-            <div class="ide-pane-head"><span>▶ Live preview</span><span class="ide-meta" id="previewMeta">auto-run</span></div>
-            <div class="ide-preview-frame-wrap" id="previewWrap">
-              <iframe id="livePreview" class="ide-iframe" sandbox="allow-scripts allow-modals"></iframe>
-              <div class="ide-console" id="ideConsole" style="display:none"><div class="ic-head">Console</div><div class="ic-body" id="icBody"></div></div>
-            </div>
-          </div>
+      </div>
+      <!-- Saved projects strip -->
+      <div class="cs-projects">
+        <div class="cs-proj-head">
+          <h3>Saved projects</h3>
+          <span class="cs-proj-count" id="snippetCount">0</span>
         </div>
-        <!-- Saved snippets list (below the editor) -->
-        <div class="ide-list-head"><h3>Your saved snippets</h3><span class="ide-meta" id="snippetCount">0 saved</span></div>
         <div class="snippets-list" id="snippetsList"></div>
       </div>
     </div>
