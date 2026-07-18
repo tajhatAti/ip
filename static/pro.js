@@ -1301,12 +1301,12 @@ async function loadSnippets() {
           '<div class="snippet-actions">' +
             '<button class="vault-btn" onclick="loadSnippetIntoEditor(' + s.id + ')">📂 Open</button>' +
             '<button class="vault-btn" onclick="copySnippetCode(' + s.id + ')">📋 Copy</button>' +
-            '<button class="vault-btn" onclick="toggleSnippetShare(' + s.id + ')">' + (shared ? "🔗 Unshare" : "🔗 Share") + '</button>' +
+            '<button class="vault-btn" onclick="toggleSnippetShare(' + s.id + ')">' + (shared ? "🚀 Unpublish" : "🚀 Publish") + '</button>' +
             '<button class="vault-btn delete" onclick="deleteSnippet(' + s.id + ')">🗑️</button>' +
           '</div>' +
         '</div>' +
         '<pre class="snippet-code"><code>' + escapeHtml(preview) + ((s.content || "").length > 120 ? "\n…" : "") + '</code></pre>' +
-        (shared ? '<div class="snippet-share-url"><span>Private link:</span><code>' + escapeHtml(url) + '</code><button class="vault-btn" onclick="copyText(' + JSON.stringify(url) + ')">Copy link</button><button class="vault-btn" onclick="window.open(' + JSON.stringify(url) + ', \'_blank\')">Open ↗</button></div>' : '<div class="snippet-share-url muted"><span>Not shared — click 🔗 Share to generate a private link that renders the code live.</span></div>') +
+        (shared ? '<div class="snippet-share-url"><span>Published at:</span><code>' + escapeHtml(url) + '</code><button class="vault-btn" onclick="window.open(' + JSON.stringify(url) + ', \'_blank\')">Open page ↗</button></div>' : '<div class="snippet-share-url muted"><span>Not published — click 🚀 Publish to deploy a standalone static page.</span></div>') +
       '</div>';
     }).join("");
   } catch (err) { toast("Could not load snippets: " + err.message, "error"); }
@@ -1355,11 +1355,11 @@ async function toggleSnippetShare(id) {
     if (res.share && res.url) {
       const origin = window.location.origin + window.location.pathname.replace(/index\.html$/, "").replace(/\/$/, "");
       const full = origin + res.url;
-      try { await navigator.clipboard.writeText(full); toast("Private link copied! 🔗 Open it to see the code RUN.", "success"); }
-      catch (e) { toast("Private share link created! 🔗", "success"); }
-      logEvent("success", "Snippet shared", "Private link generated — runs live");
+      try { await navigator.clipboard.writeText(full); toast("Published! 🔗 Your standalone page link was copied.", "success"); }
+      catch (e) { toast("Published! 🔗 Your page is live.", "success"); }
+      logEvent("success", "Snippet shared", "Standalone page published");
     } else {
-      toast("Sharing disabled for this snippet.", "info");
+      toast("Unpublished — the page is no longer live.", "info");
       logEvent("warning", "Snippet unshared", "");
     }
     await loadSnippets();

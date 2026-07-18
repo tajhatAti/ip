@@ -2229,13 +2229,15 @@ def toggle_snippet_share(payload: SnippetShare, authorization: Optional[str] = H
 
 @app.get("/s/{token}")
 def view_shared_snippet(token: str):
-    """Public shareable link — NO auth. Renders a GitHub-style RUNNING page.
+    """Public PUBLISHED page — NO auth, NO editor UI.
 
-    HTML/CSS/JS/Markdown actually render/execute live; everything else is shown
-    with syntax highlighting. The raw code is passed to the page as a JSON
-    blob (never interpolated), so the view is safe against arbitrary code.
+    This is the finished, standalone output (GitHub-Pages style), not a tool:
+      * HTML snippets -> served verbatim as the user's own HTML document
+        (a true standalone static page, exactly like deploying index.html).
+      * Other languages -> a single clean viewer that just renders/runs the
+        content. No Copy/Download/source/console/tabs — only the output.
     """
-    from snippet_page import build_share_page
+    from snippet_page import build_published_page
     from fastapi.responses import HTMLResponse
 
     conn = get_db_connection()
@@ -2245,13 +2247,15 @@ def view_shared_snippet(token: str):
             "WHERE share_token = ? AND is_public = 1", (token,),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="This snippet is private or no longer shared.")
+            raise HTTPException(status_code=404, detail="This page is private or no longer published.")
         conn.execute("UPDATE snippets SET views = views + 1 WHERE share_token = ?", (token,))
         conn.commit()
     finally:
         conn.close()
 
-    return HTMLResponse(content=build_share_page(row))
+    html, is_raw = build_published_page(row)
+    # For HTML we serve the user's document as-is (true standalone page).
+    return HTMLResponse(content=html)
 
 
 # ================================
