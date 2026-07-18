@@ -209,79 +209,14 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-/* ---------------- PREMIUM ANIMATED EMOJI (Lottie) ----------------
-   Real vector animations — Google Noto animated emoji, the SAME tech as
-   Telegram Premium (Lottie/Bodymovin, 60fps, smooth, the glyph itself moves).
-   No CSS particle/box-shadow hacks — those looked cheap and laggy.
-
-   ep(emoji)  -> <span class="noto" data-cp="1f525"><span class="glyph">🔥</span></span>
-                 (falls back to the emoji glyph if the Lottie CDN fails)
-   initNotoEmoji() upgrades every .noto[data-cp] into a canvas Lottie player,
-   lazy-loaded via IntersectionObserver so the page stays light.
+/* ---------------- PREMIUM EMOJI (interaction-driven, restrained) ----------------
+   Per the Premium Emoji Animation Spec: emoji are STATIC by default and move
+   ONLY on hover/tap. One dominant transform (scale + small tilt), ease-out-expo,
+   280ms. No particles, no floating, no bounce, no ambient loops on everything.
+   Only 1-2 hero emoji get the --idle breathing class.
 */
-const EPX_NOTO = {
-  "✅":"2705","✔️":"2714_fe0f","☑️":"2611_fe0f","🟢":"1f7e2","✓":"2713",
-  "🔥":"1f525","💣":"1f4a3","💥":"1f4a5","💎":"1f48e","🔷":"1f537",
-  "⭐":"2b50","🌟":"1f31f","✨":"2728","❤️":"2764_fe0f","❤":"2764",
-  "💗":"1f497","💖":"1f496","💝":"1f49d","💕":"1f495","🎉":"1f389","🎊":"1f38a",
-  "🚀":"1f680","👍":"1f44d","👏":"1f44f","🙌":"1f64c","🤝":"1f91d","💯":"1f4af",
-  "🔐":"1f510","🔒":"1f512","🛡️":"1f6e1_fe0f","🛡":"1f6e1","🔑":"1f511","🔏":"1f50f",
-  "🪙":"1fa99","💰":"1f4b0","💵":"1f4b5","💳":"1f4b3","⚡":"26a1","🌈":"1f308",
-  "✉️":"2709_fe0f","📧":"1f4e7","📨":"1f4e8","📶":"1f4f6","💧":"1f4a7","❄️":"2744_fe0f",
-  "🔔":"1f514","🌙":"1f319","☀️":"2600_fe0f","🚪":"1f6aa","⚠️":"26a0_fe0f",
-  "📝":"1f4dd","🔖":"1f516","👥":"1f465","🪪":"1faaa","🖥️":"1f5a5_fe0f","🌱":"1f331",
-  "📊":"1f4ca","📅":"1f4c5","📱":"1f4f1","🗄️":"1f5c4_fe0f","📄":"1f4c4","📁":"1f4c1",
-  "🔗":"1f517","🧾":"1f9fe","🚗":"1f697","🏠":"1f3e0","🔢":"1f522","📞":"1f4de",
-  "🎫":"1f3ab_fe0f","🎟️":"1f39f_fe0f","📋":"1f4cb","📤":"1f4e4","📥":"1f4e5",
-  "🔄":"1f504","📲":"1f4f2","📜":"1f4dc","🗑️":"1f5d1_fe0f","🗑":"1f5d1",
-  "🆔":"1f194","🛂":"1f6c2","➕":"2795","🗂️":"1f5c2_fe0f","📂":"1f4c2","💻":"1f4bb",
-  "🖨️":"1f5a8_fe0f","⚙️":"2699_fe0f","🔧":"1f527","🪄":"1fa84","🎨":"1f3a8","🎯":"1f3af",
-  "💡":"1f4a1","🧠":"1f9e0","👁️":"1f441_fe0f","🌍":"1f30d","🌐":"1f310","📍":"1f4cd",
-  "🔍":"1f50d","⌂":"1f3e0","📇":"1f4c7",
-};
-const NOTO_CDN = "https://fonts.gstatic.com/s/e/notoemoji/latest/";
-const _notoObserver = (typeof IntersectionObserver !== "undefined")
-  ? new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting) { upgradeNoto(en.target); _notoObserver.unobserve(en.target); }
-      });
-    }, { rootMargin: "200px" })
-  : null;
-
 function ep(emoji, _ignored) {
-  const cp = EPX_NOTO[emoji];
-  if (cp) return '<span class="noto" data-cp="' + cp + '"><span class="glyph">' + (emoji || "") + '</span></span>';
-  return '<span class="noto"><span class="glyph">' + (emoji || "") + '</span></span>';
-}
-
-/* Upgrade one .noto slot into a canvas Lottie animation. Idempotent. */
-function upgradeNoto(el) {
-  if (!el || el.dataset.init === "1") return;
-  el.dataset.init = "1";
-  const cp = el.dataset.cp;
-  if (!cp || typeof lottie === "undefined" || !lottie.loadAnimation) return;
-  try {
-    const anim = lottie.loadAnimation({
-      container: el,
-      renderer: "canvas",            // canvas = much lighter than SVG for many icons
-      loop: true,
-      autoplay: true,
-      path: NOTO_CDN + cp + "/lottie.json",
-    });
-    anim.addEventListener("DOMLoaded", function () { el.classList.add("ready"); });
-    anim.addEventListener("data_failed", function () { el.dataset.init = "0"; });
-  } catch (e) { el.dataset.init = "0"; }
-}
-
-/* Scan a scope for .noto[data-cp] and (lazy-)upgrade them. Idempotent —
-   skips already-initialized slots, safe to call after every list render. */
-function initNotoEmoji(root) {
-  const scope = root || document;
-  const slots = scope.querySelectorAll(".noto[data-cp]:not([data-init])");
-  slots.forEach(function (el) {
-    if (_notoObserver) _notoObserver.observe(el);
-    else upgradeNoto(el);
-  });
+  return '<span class="premium-emoji">' + (emoji || "") + '</span>';
 }
 
 /* ---------------- PASSWORD STRENGTH ---------------- */
@@ -554,7 +489,6 @@ async function loadDashboard() {
   await loadStats(); // updates the stat counters
 
   showScreen("screen-dashboard");
-  initNotoEmoji();
 }
 
 /* ==================== VAULT ==================== */
@@ -620,7 +554,6 @@ async function loadVault() {
       </div>
     `).join("");
   } catch (err) { console.error("Load vault error:", err); toast("Could not load vault: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 
 function startEditVault(id, type, label, value) {
@@ -702,7 +635,6 @@ async function loadNotes() {
     `).join("");
     const sn = document.getElementById("statNotes"); if (sn) sn.textContent = data.notes.length;
   } catch (err) { console.error("Load notes error:", err); toast("Could not load notes: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 
 function startEditNote(id, title, content, color) {
@@ -795,7 +727,6 @@ async function loadBookmarks() {
     `).join("");
     const sb = document.getElementById("statBookmarks"); if (sb) sb.textContent = data.bookmarks.length;
   } catch (err) { console.error("Load bookmarks error:", err); toast("Could not load bookmarks: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 
 function startEditBookmark(id, title, url, description) {
@@ -908,7 +839,6 @@ async function loadCards() {
       </div>`;
     }).join("");
   } catch (err) { console.error("Load cards error:", err); toast("Could not load cards: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 
 function revealCard(id) {
@@ -986,7 +916,6 @@ async function loadTasks() {
       </div>
     `).join("");
   } catch (err) { console.error("Load tasks error:", err); toast("Could not load tasks: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 
 async function addTask() {
@@ -1057,7 +986,6 @@ async function loadIdentities() {
         </div>
       </div>`).join("");
   } catch (err) { toast("Could not load identities: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 async function deleteIdentity(id) {
   if (!confirm("Delete this identity?")) return;
@@ -1096,7 +1024,6 @@ async function loadContacts() {
         </div>
       </div>`).join("");
   } catch (err) { toast("Could not load contacts: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 async function deleteContact(id) {
   if (!confirm("Delete this contact?")) return;
@@ -1134,7 +1061,6 @@ async function loadWifi() {
         </div>
       </div>`).join("");
   } catch (err) { toast("Could not load WiFi: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 async function deleteWifi(id) {
   if (!confirm("Delete this WiFi network?")) return;
@@ -1184,7 +1110,6 @@ async function loadServers() {
         </div>
       </div>`).join("");
   } catch (err) { toast("Could not load servers: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 async function deleteServer(id) {
   if (!confirm("Delete this server?")) return;
@@ -1221,7 +1146,6 @@ async function loadRecovery() {
         </div>
       </div>`).join("");
   } catch (err) { toast("Could not load recovery phrases: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 function revealRecovery(id, words) {
   const el = document.getElementById("rec-" + id);
@@ -1386,7 +1310,6 @@ async function loadSnippets() {
       '</div>';
     }).join("");
   } catch (err) { toast("Could not load snippets: " + err.message, "error"); }
-  initNotoEmoji(list);
 }
 
 /* Load a saved snippet into the editor. */
@@ -1523,7 +1446,6 @@ function renderCommandResults() {
       <span class="cmd-kind">${r.kind}</span>
     </div>`;
   }).join("");
-  initNotoEmoji(box);
 }
 function openSearchResult(i) {
   const r = _cmdResults[i];
@@ -1853,7 +1775,6 @@ document.addEventListener("DOMContentLoaded", () => {
     _saveActivity([]); renderActivity(); toast("Activity log cleared", "info");
   });
   renderActivity(); // draw any persisted events immediately
-  initNotoEmoji(); // upgrade static premium-emoji slots
 
   // ---- OTP "Paste from clipboard" button ----
   const otpPasteBtn = document.getElementById("otpPasteBtn");

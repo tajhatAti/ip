@@ -1,62 +1,65 @@
 /* ============================================================
-   PREMIUM ANIMATED EMOJI — real Lottie vector animations
-   (Google Noto animated emoji — same tech as Telegram Premium:
-    60fps Lottie/Bodymovin, smooth, the glyph itself animates).
-
-   No CSS particle/box-shadow hacks — those looked cheap and laggy.
-   Instead, .noto[data-cp] slots are upgraded at runtime by pro.js
-   (initNotoEmoji) into a <canvas> Lottie animation, lazy-loaded
-   via IntersectionObserver so the page stays light.
-
-   The emoji glyph stays as a graceful fallback if Lottie fails.
+   PREMIUM EMOJI ANIMATION — exactly per spec
+   Static by default. Motion only on hover/tap. One dominant
+   transform. Ease-out-expo. No particles, no floating, no bounce.
    ============================================================ */
 
 @media (prefers-reduced-motion: reduce) {
-  .noto canvas { display: none !important; }
-  .brand-mark, .brand-mark::before, .brand-mark::after,
-  .boot-logo, .boot-logo::before, .boot-logo::after,
-  .btn-primary::after { animation: none !important; }
+  .premium-emoji, .brand-mark, .boot-logo, .btn-primary::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
-/* ---------- the slot that holds a Lottie emoji ---------- */
-.noto {
-  position: relative;
+/* ---------- THE drop-in class (verbatim from spec) ---------- */
+.premium-emoji {
   display: inline-block;
-  line-height: 1;
-  vertical-align: middle;
-  width: 1em;
-  height: 1em;
-  font-size: inherit;
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center;
+  will-change: transform;
 }
-.noto > .glyph {
-  display: block;
-  line-height: 1;
-  transition: opacity .2s;
-}
-.noto > canvas {
-  position: absolute;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-  opacity: 0;
-  transition: opacity .25s ease;
-  pointer-events: none;
-}
-.noto.ready > canvas { opacity: 1; }
-.noto.ready > .glyph { opacity: 0; }      /* glyph hidden once anim plays */
 
-/* ---------- icon-slot sizing helpers ---------- */
-.feat-ic .noto, .stat-ic .noto { font-size: 1.75em; }
-.qc-ic .noto, .bn-ic .noto { font-size: 1.5em; }
-.vault-icon .noto, .bookmark-icon .noto { font-size: 1.5em; }
-.hero-showcase .noto { font-size: 2rem; }
-.cmd-ic .noto { font-size: 1.2em; }
-.otp-emoji .noto { font-size: 42px; }
-.more-item .noto { font-size: 22px; }
-.trust-item .noto { font-size: 16px; }
-.sec-card h4 .noto { font-size: 1em; }
+.premium-emoji:hover {
+  transform: scale(1.08) rotate(3deg);
+}
 
-/* ---------- hero showcase row ---------- */
+.premium-emoji:active {
+  transform: scale(0.94);
+  transition-duration: 100ms;
+}
+
+/* Use ONLY on 1-2 hero/focal emoji, not globally */
+.premium-emoji--idle {
+  animation: emoji-breathe 3.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes emoji-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+/* ---------- icon-slot sizing (keep emoji readable) ---------- */
+.feat-ic, .stat-ic, .qc-ic, .bn-ic,
+.vault-icon, .bookmark-icon {
+  display: inline-grid;
+  place-items: center;
+  font-size: 1em;
+}
+.feat-ic { font-size: 28px; }
+.stat-ic { font-size: 28px; }
+.qc-ic { font-size: 24px; }
+.bn-ic { font-size: 19px; }
+.vault-icon, .bookmark-icon { font-size: 24px; }
+.cmd-ic { font-size: 18px; }
+.otp-emoji .premium-emoji { font-size: 42px; }
+.more-item .premium-emoji { font-size: 22px; }
+
+/* icon-btn (search, theme) get premium hover too */
+.icon-btn .premium-emoji {
+  font-size: 16px;
+}
+
+/* ---------- hero showcase row (1-2 idle, rest hover-only) ---------- */
 .hero-showcase {
   display: flex;
   gap: .4rem;
@@ -69,53 +72,47 @@
   border-radius: 16px;
   max-width: max-content;
 }
+.hero-showcase .premium-emoji { font-size: 2rem; }
+.hero-showcase .premium-emoji:nth-child(1),
+.hero-showcase .premium-emoji:nth-child(2) { /* only first 2 get idle breathing */
+  animation: emoji-breathe 3.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.hero-showcase .premium-emoji:nth-child(2) { animation-delay: 1.5s; }
 @media (max-width: 560px) {
   .hero-showcase { gap: .3rem; padding: 10px 14px; max-width: 100%; }
-  .hero-showcase .noto { font-size: 1.6rem; }
+  .hero-showcase .premium-emoji { font-size: 1.6rem; }
 }
 
 /* ============================================================
-   ANIMATED BRAND LOGO — kept (it's a vector gradient mark,
-   genuinely smooth, not a particle hack).
+   BRAND LOGO — simplified, restrained
+   Clean gradient + subtle hover scale. No busy sparkle ring.
    ============================================================ */
 .brand-mark, .boot-logo {
-  position: relative;
-  background: transparent !important;
-  box-shadow: none !important;
-  overflow: visible;
   display: grid;
   place-items: center;
-  isolation: isolate;
   color: #fff;
-  animation: brand-glow 3s ease-in-out infinite;
+  background: linear-gradient(120deg, #6366f1, #a855f7, #22d3ee, #6366f1) !important;
+  background-size: 300% 300% !important;
+  animation: brand-gradient 8s ease infinite;
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
-.brand-mark::before, .boot-logo::before {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 0;
-  background:
-    linear-gradient(120deg, #6366f1, #a855f7, #22d3ee, #6366f1),
-    linear-gradient(115deg, transparent 35%, rgba(255,255,255,.5) 48%, transparent 60%);
-  background-size: 300% 300%, 250% 100%;
-  background-blend-mode: normal, overlay;
-  animation: brand-gradient 6s ease infinite, brand-sheen 4.5s ease-in-out infinite;
+.brand-mark:hover, .boot-logo:hover {
+  transform: scale(1.08);
 }
-.brand-mark::after, .boot-logo::after {
-  content: ""; position: absolute; inset: -30%; border-radius: 50%; z-index: 0;
-  background: conic-gradient(from 0deg, transparent 0 72%, rgba(255,255,255,.9) 82%, transparent 92%);
-  -webkit-mask: radial-gradient(circle, transparent 57%, #000 58%);
-          mask: radial-gradient(circle, transparent 57%, #000 58%);
-  animation: brand-ring 4.5s linear infinite;
-  opacity: .9;
+.brand-mark:active {
+  transform: scale(0.94);
+  transition-duration: 100ms;
 }
-.brand-mark > *, .boot-logo > * { position: relative; z-index: 2; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
-@keyframes brand-glow     { 0%,100%{ filter: drop-shadow(0 4px 10px rgba(99,102,241,.35));} 50%{ filter: drop-shadow(0 6px 22px rgba(168,85,247,.7));} }
-@keyframes brand-gradient { 0%,100%{ background-position: 0% 50%, 0 0;} 50%{ background-position: 100% 50%, 0 0;} }
-@keyframes brand-sheen    { 0%{ background-position: 0% 50%, -150% 0;} 60%,100%{ background-position: 100% 50%, 250% 0;} }
-@keyframes brand-ring     { to { transform: rotate(360deg); } }
+@keyframes brand-gradient {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
 .brand-mark.sm { width: 26px; height: 26px; font-size: 11px; border-radius: 9px; }
 .brand-mark.lg { width: 48px; height: 48px; font-size: 18px; border-radius: 14px; }
 .boot-logo { border-radius: 18px; }
 
-/* primary button sheen */
+/* primary button sheen (subtle) */
 .btn-primary { position: relative; overflow: hidden; }
 .btn-primary::after {
   content: ""; position: absolute; top: 0; left: -120%; width: 60%; height: 100%;
@@ -127,8 +124,3 @@
 
 /* live dot */
 .dot-live { box-shadow: 0 0 0 4px rgba(34,211,238,.16), 0 0 8px rgba(34,211,238,.8) !important; }
-
-/* icon slot containers */
-.feat-ic, .stat-ic, .qc-ic, .bn-ic, .vault-icon, .bookmark-icon {
-  display: inline-grid; place-items: center;
-}
