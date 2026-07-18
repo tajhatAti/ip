@@ -1378,13 +1378,105 @@ async function copySnippetCode(id) {
 }
 
 /* Draggable split divider between editor and preview. */
-/* Preview panel toggle — slides open/closed from the right. */
+/* Preview panel toggle — slides open/closed from the right.
+   For runnable languages (html/css/js/md): shows live preview.
+   For other languages: runs real code execution (Python etc). */
 function togglePreviewPanel(open) {
   const zone = document.getElementById("idePreview");
   if (!zone) return;
   if (open === undefined) open = !zone.classList.contains("open");
-  if (open) { zone.classList.add("open"); runLivePreview(); }
-  else { zone.classList.remove("open"); }
+  if (open) {
+    zone.classList.add("open");
+    const lang = document.getElementById("snippetLanguage").value;
+    if (_RUNNABLE_LANGS[(lang||"").toLowerCase()]) {
+      runLivePreview();
+    } else {
+      executeCode(); // real execution for Python/C/etc
+    }
+  } else {
+    zone.classList.remove("open");
+  }
+}
+
+/* Execute code on the backend runner service — real output, not preview. */
+async function executeCode() {
+  const lang = document.getElementById("snippetLanguage").value;
+  const code = document.getElementById("snippetContent").value;
+  if (!code.trim()) { toast("Nothing to run!", "error"); return; }
+
+  // Show the console
+  const consoleBox = document.getElementById("ideConsole");
+  const icBody = document.getElementById("icBody");
+  if (consoleBox) consoleBox.style.display = "flex";
+  if (icBody) icBody.innerHTML = "";
+
+  // Loading indicator
+  if (icBody) {
+    const loading = document.createElement("div");
+    loading.className = "ln info";
+    loading.textContent = "Running " + lang + "…";
+    loading.id = "execLoading";
+    icBody.appendChild(loading);
+  }
+
+  try {
+    const result = await api("/api/execute", "POST", { language: lang, code: code }, true);
+    // Remove loading
+    const loadingEl = document.getElementById("execLoading");
+    if (loadingEl) loadingEl.remove();
+
+    if (result.success) {
+      if (result.stdout && icBody) {
+        result.stdout.split("\n").forEach(function(line) {
+          const ln = document.createElement("div");
+          ln.className = "ln info";
+          ln.textContent = line;
+          icBody.appendChild(ln);
+        });
+      } else if (icBody && !result.stdout) {
+        const ln = document.createElement("div");
+        ln.className = "ln";
+        ln.style.color = "var(--muted-2)";
+        ln.textContent = "(no output)";
+        icBody.appendChild(ln);
+      }
+    } else {
+      // Show stderr or error
+      if (result.stderr && icBody) {
+        result.stderr.split("\n").forEach(function(line) {
+          const ln = document.createElement("div");
+          ln.className = "ln err";
+          ln.textContent = line;
+          icBody.appendChild(ln);
+        });
+      }
+      if (result.error && icBody) {
+        const ln = document.createElement("div");
+        ln.className = "ln err";
+        ln.textContent = "✕ " + result.error;
+        icBody.appendChild(ln);
+      }
+    }
+    // Execution time
+    if (icBody && result.execution_time_ms !== undefined) {
+      const ln = document.createElement("div");
+      ln.className = "ln";
+      ln.style.color = "var(--muted-2)";
+      ln.style.marginTop = "6px";
+      ln.textContent = "—— exit " + result.exit_code + " · " + result.execution_time_ms + "ms ——";
+      icBody.appendChild(ln);
+    }
+    if (icBody) icBody.scrollTop = icBody.scrollHeight;
+  } catch (err) {
+    const loadingEl = document.getElementById("execLoading");
+    if (loadingEl) loadingEl.remove();
+    if (icBody) {
+      const ln = document.createElement("div");
+      ln.className = "ln err";
+      ln.textContent = "✕ " + err.message;
+      icBody.appendChild(ln);
+    }
+  }
 }
 
 /* Update line-number gutter */

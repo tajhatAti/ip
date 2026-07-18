@@ -1,0 +1,21 @@
+# render.yaml — Code Execution Runner (Service #2)
+# Deploy this as a SEPARATE Render web service.
+# ============================================================
+services:
+  - type: web
+    name: ahad-code-runner
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: RUNNER_SERVICE_SECRET
+        # ⚠️ Set this in Render Dashboard to a strong random string.
+        # MUST match the same secret set on the main website service.
+        # Generate one: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+        sync: false
+      - key: MAX_EXECUTION_TIME_MS
+        value: "10000"
+      - key: MAX_MEMORY_MB
+        value: "256"
+    healthCheckPath: /health

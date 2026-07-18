@@ -2258,6 +2258,84 @@ def view_shared_snippet(token: str):
     return HTMLResponse(content=html)
 
 
+
+
+
+# ================================
+# CODE EXECUTION PROXY (main website → runner service)
+# ================================
+class ExecuteCodeRequest(BaseModel):
+    language: str
+    code: str
+    stdin: Optional[str] = None
+
+
+@app.post("/api/execute")
+def execute_code(payload: ExecuteCodeRequest, request: Request, authorization: Optional[str] = Header(None)):
+    """Proxy code execution to the separate runner service.
+
+    User → this endpoint (auth required) → runner service (shared secret).
+    The user NEVER sees the runner URL or secret — those stay server-side.
+    """
+    # 1) User must be logged in.
+    get_current_user_and_session(authorization)
+
+    # 2) Rate limit (per-user, stricter than general rate limiter).
+    rate_limit(f"{client_ip(request)}:exec")
+
+    # 3) Get runner config from env.
+    runner_url = os.getenv("RUNNER_SERVICE_URL", "").strip().rstrip("/")
+    runner_secret = os.getenv("RUNNER_SERVICE_SECRET", "").strip()
+
+    if not runner_url or not runner_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Code execution is not configured. Set RUNNER_SERVICE_URL and RUNNER_SERVICE_SECRET.",
+        )
+
+    # 4) Forward to runner service (server-to-server, secret never sent to browser).
+    try:
+        response = requests.post(
+            runner_url + "/internal/execute",
+            json={
+                "language": payload.language,
+                "code": payload.code,
+                "stdin": payload.stdin or "",
+            },
+            headers={
+                "Authorization": "Bearer " + runner_secret,
+                "Content-Type": "application/json",
+            },
+            timeout=15,  # slightly more than MAX_EXECUTION_TIME_MS
+        )
+    except requests.ConnectionError:
+        logger.error("Runner service unreachable at %s", runner_url)
+        raise HTTPException(
+            status_code=503,
+            detail="Code execution service is temporarily unavailable. Please try again later.",
+        )
+    except requests.Timeout:
+        raise HTTPException(
+            status_code=504,
+            detail="Code execution took too long. Please simplify your code.",
+        )
+
+    if response.status_code == 401:
+        raise HTTPException(status_code=500, detail="Runner authentication failed. Contact admin.")
+    if response.status_code == 403:
+        raise HTTPException(status_code=500, detail="Runner secret mismatch. Contact admin.")
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail="Code execution service returned an error ({}).".format(response.status_code),
+        )
+
+    result = response.json()
+    # Pass through stdout/stderr/exit_code/execution_time to the user.
+    # The runner URL and secret are NEVER in this response.
+    return result
+
+
 # ================================
 # USER PREFERENCES
 # ================================
