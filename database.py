@@ -211,7 +211,19 @@ class _Cursor:
                 row = self._cur.fetchone()
                 self._returning_id = row["id"] if row else None
                 return self
-        self._cur.execute(sql_t, tuple(params))
+        try:
+            self._cur.execute(sql_t, tuple(params))
+        except Exception as exc:
+            # Every query in the app passes through HERE — log failures so a
+            # leftover SQLite-only construct (or any DB error) is visible in
+            # logs immediately instead of hiding behind a 500. Params are
+            # intentionally NOT logged: they can carry vault secrets.
+            logger.error(
+                "DB query failed [%s]: %s | SQL: %s",
+                DIALECT, type(exc).__name__, " ".join(sql_t.split())[:500],
+                exc_info=False,
+            )
+            raise
         return self
 
     def executemany(self, sql, seq_of_params):

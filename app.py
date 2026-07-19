@@ -2040,7 +2040,7 @@ def list_contacts(authorization: Optional[str] = Header(None)):
     try:
         rows = conn.execute(
             "SELECT id, name, email, phone, company, address, note, created_at, updated_at "
-            "FROM user_contacts WHERE user_id = ? ORDER BY name COLLATE NOCASE", (user["id"],),
+            "FROM user_contacts WHERE user_id = ? ORDER BY LOWER(name), name", (user["id"],),
         ).fetchall()
         return {"contacts": [dict(r) for r in rows]}
     finally:
@@ -2430,10 +2430,12 @@ def view_wifi_share(token: str):
 # QR CODE GENERATOR (for WiFi / anything)
 # ================================
 @app.get("/qr")
-def make_qr(text: str, authorization: Optional[str] = Header(None)):
+def make_qr(text: Optional[str] = None, q: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    # Frontend historically calls ?q=… ; older callers used ?text=… — accept both.
     _ = authorization
+    payload = text or q or ""
     qr = qrcode.QRCode(version=1, box_size=8, border=2)
-    qr.add_data(text or "")
+    qr.add_data(payload)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     buffer = io.BytesIO()
