@@ -399,6 +399,49 @@ def read_index():
     return FileResponse(INDEX_FILE)
 
 
+# Client-side routing: every app section has a real URL (/vault, /code, …).
+# Deep links / refreshes on these paths must serve the SPA shell — the
+# frontend router reads the path and opens the right section (after auth).
+#
+# The API lives at ROOT (GET /contacts returns JSON), so section URLs that
+# collide with an API GET need content negotiation: a browser navigation
+# (Accept: text/html, no Authorization header — tokens ride fetch headers,
+# never visible in address-bar navigations) gets the SPA shell, while the
+# SPA's own authed fetch on the same path gets the JSON data. Registered
+# BEFORE the API routes on purpose, since route order decides the match.
+def _spa_negotiator(fn_name: str):
+    def handler(request: Request):
+        accept = (request.headers.get("accept") or "").lower()
+        auth_hdr = request.headers.get("authorization")
+        if "text/html" in accept and not auth_hdr:
+            if not INDEX_FILE.exists():
+                raise HTTPException(status_code=404, detail="index.html not found.")
+            return FileResponse(INDEX_FILE)
+        fn = globals().get(fn_name)   # resolved at request time (defined below)
+        if fn is None:
+            raise HTTPException(status_code=404, detail="Not found.")
+        return fn(authorization=auth_hdr)
+    return handler
+
+
+_NEGOTIATED = {
+    "contacts": "list_contacts", "wifi": "list_wifi", "vault": "list_vault",
+    "cards": "list_cards", "identities": "list_identities", "servers": "list_servers",
+    "recovery": "list_recovery", "notes": "list_notes", "bookmarks": "list_bookmarks",
+    "tasks": "list_tasks", "profile": "get_profile",
+}
+for _p, _fn in _NEGOTIATED.items():
+    app.get("/" + _p, include_in_schema=False)(_spa_negotiator(_fn))
+
+# Section URLs with NO API collision can serve the shell directly.
+CLIENT_ONLY_PATHS = [
+    "dashboard", "seeds", "code", "jobs", "activity",
+    "sign-in", "sign-up", "login", "forgot",
+]
+for _p in CLIENT_ONLY_PATHS:
+    app.get("/" + _p, include_in_schema=False)(read_index)
+
+
 @app.get("/health")
 def health():
     return {

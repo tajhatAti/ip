@@ -88,6 +88,11 @@ function switchTab(tabId) {
   if (tabId === "jobs") { startJobPolling(); } else { stopJobPolling(); }
   // ⚙️ Settings: keep the security panel truthful every time it opens.
   if (tabId === "profile") { refreshSecurityPanel(); loadSessionsList(); }
+  // 🔗 Every section is a REAL URL — back/forward + refresh + sharing work.
+  if (!_routeNav) {
+    const p = TAB_PATHS[tabId];
+    if (p) { try { if (_clientPath() !== p) history.pushState({ tab: tabId }, "", p); } catch (e2) {} }
+  }
 }
 
 /* ---------------- TOAST ---------------- */
@@ -272,6 +277,8 @@ async function api(path, method = "POST", body = null, auth = false) {
     throw e;
   }
 
+  const data = await res.json().catch(() => ({}));
+
   if (res.status === 401 && auth) {
     localStorage.removeItem("ahad_token");
     localStorage.removeItem("ahad_auth_token");
@@ -281,8 +288,10 @@ async function api(path, method = "POST", body = null, auth = false) {
     throw new Error("Session expired.");
   }
 
-  // Proxy-level failures while the service is cold (502/503/504) are infra.
-  if (res.status >= 502 && res.status <= 504) {
+  // Proxy/gateway failures while the service is cold (502/503/504 with NO
+  // app-level JSON detail) are infra. A 503 carrying a FastAPI detail — e.g.
+  // "Jobs are not configured" — is a NORMAL app error, shown as-is.
+  if (res.status >= 502 && res.status <= 504 && !(data && data.detail)) {
     _serverDown();
     const e = new Error("Server is waking up (HTTP " + res.status + ") — please wait a moment…");
     e.kind = "infra";
@@ -290,7 +299,6 @@ async function api(path, method = "POST", body = null, auth = false) {
   }
   _serverUp();  // any well-formed response = the backend is alive again
 
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || "Something went wrong");
   return data;
 }
@@ -709,6 +717,7 @@ document.getElementById("btnVerify").addEventListener("click", async () => {
     btnOk(btn, () => {
       stopOtpExpiry();
       showScreen("screen-dashboard");
+      _consumeReturnTo();   // deep link pending? go there now
       toast("Email verified! Welcome!", "success");
       syncActivityFromServer();
     });
@@ -768,6 +777,7 @@ async function handleSignin(e) {
     await loadDashboard();
     btnOk(btn, () => {
       showScreen("screen-dashboard");
+      _consumeReturnTo();   // deep link pending? go there now
       toast("Welcome back!", "success");
       syncActivityFromServer();
     });
@@ -898,6 +908,30 @@ async function loadDashboard() {
    THE DOM at toggle time (like an updater fn — no stale closure, no ghost
    handler). The form element itself is the only source of truth. */
 function _clearIds(ids) { (ids || []).forEach(i => { const e = document.getElementById(i); if (e) e.value = ""; }); }
+
+/* ---------------- SECTION LOAD FAILURE — NEVER a stuck spinner ----------------
+   Every section's loader must ALWAYS end in a real state: data, empty, or a
+   clear inline error WITH a retry button. A failed fetch used to leave the
+   "Loading…" spinner running forever, which read as a frozen app. */
+function _loadErrorBox(list, what, retryFn, e) {
+  if (!list) return;
+  const infra = !!(e && e.kind === "infra");
+  list.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "load-error";
+  box.innerHTML =
+    '<div class="load-error-ic">' + ic(infra ? "refresh" : "alert") + '</div>' +
+    '<div class="load-error-tx"><b>' + (infra ? "Server waking up…" : ("Couldn\u2019t load " + what)) + '</b>' +
+    '<span>' + (infra
+      ? "The free-plan server is starting — this retries by itself (about a minute)."
+      : escapeHtml((e && e.message) || "Something went wrong")) + '</span></div>';
+  const btn = document.createElement("button");
+  btn.className = "vault-btn";
+  btn.innerHTML = ic("refresh") + " Retry";
+  btn.addEventListener("click", () => { retryFn(); });
+  box.appendChild(btn);
+  list.appendChild(box);
+}
 const _ADD_FORMS = {
   vault:     { form: "vaultForm",    btn: "btnAddVault",    add: "＋ Add new",      hide: "Hide", clear: () => { _clearIds(["vaultType","vaultLabel","vaultValue"]); editingVaultId = null; } },
   card:      { form: "cardForm",     btn: "btnAddCard",     add: "＋ Add card",     hide: "Hide", clear: () => { _clearIds(["cardLabel","cardHolder","cardBrand","cardNumber","cardExpiry","cardCvv","cardNote"]); editingCardId = null; } },
@@ -973,7 +1007,7 @@ async function loadVault() {
         </div>
       </div>
     `).join("");
-  } catch (err) { console.error("Load vault error:", err); toast("Could not load vault: " + err.message, "error"); }
+  } catch (err) { console.error("Load vault error:", err); if (!err || err.kind !== "infra") toast("Could not load vault: " + err.message, "error"); _loadErrorBox(document.getElementById("vaultList"), "vault", loadVault, err); }
 }
 
 function startEditVault(id, type, label, value) {
@@ -1041,7 +1075,7 @@ async function loadNotes() {
       </div>
     `).join("");
     const sn = document.getElementById("statNotes"); if (sn) sn.textContent = data.notes.length;
-  } catch (err) { console.error("Load notes error:", err); toast("Could not load notes: " + err.message, "error"); }
+  } catch (err) { console.error("Load notes error:", err); if (!err || err.kind !== "infra") toast("Could not load notes: " + err.message, "error"); _loadErrorBox(document.getElementById("notesList"), "notes", loadNotes, err); }
 }
 
 function startEditNote(id, title, content, color) {
@@ -1119,7 +1153,7 @@ async function loadBookmarks() {
       </div>
     `).join("");
     const sb = document.getElementById("statBookmarks"); if (sb) sb.textContent = data.bookmarks.length;
-  } catch (err) { console.error("Load bookmarks error:", err); toast("Could not load bookmarks: " + err.message, "error"); }
+  } catch (err) { console.error("Load bookmarks error:", err); if (!err || err.kind !== "infra") toast("Could not load bookmarks: " + err.message, "error"); _loadErrorBox(document.getElementById("bookmarksList"), "bookmarks", loadBookmarks, err); }
 }
 
 function startEditBookmark(id, title, url, description) {
@@ -1217,7 +1251,7 @@ async function loadCards() {
         </div>
       </div>`;
     }).join("");
-  } catch (err) { console.error("Load cards error:", err); toast("Could not load cards: " + err.message, "error"); }
+  } catch (err) { console.error("Load cards error:", err); if (!err || err.kind !== "infra") toast("Could not load cards: " + err.message, "error"); _loadErrorBox(document.getElementById("cardsList"), "cards", loadCards, err); }
 }
 
 function revealCard(id) {
@@ -1292,7 +1326,7 @@ async function loadTasks() {
         <button class="task-del" onclick="deleteTask(${t.id})">✕</button>
       </div>
     `).join("");
-  } catch (err) { console.error("Load tasks error:", err); toast("Could not load tasks: " + err.message, "error"); }
+  } catch (err) { console.error("Load tasks error:", err); if (!err || err.kind !== "infra") toast("Could not load tasks: " + err.message, "error"); _loadErrorBox(document.getElementById("tasksList"), "tasks", loadTasks, err); }
 }
 
 async function addTask() {
@@ -1362,7 +1396,7 @@ async function loadIdentities() {
           <button class="vault-btn delete" onclick="deleteIdentity(${it.id})" title="Delete">${ic("trash")}</button>
         </div>
       </div>`).join("");
-  } catch (err) { toast("Could not load identities: " + err.message, "error"); }
+  } catch (err) { if (!err || err.kind !== "infra") toast("Could not load identities: " + err.message, "error"); _loadErrorBox(document.getElementById("identitiesList"), "identities", loadIdentities, err); }
 }
 async function deleteIdentity(id) {
   if (!confirm("Delete this identity?")) return;
@@ -1400,7 +1434,7 @@ async function loadContacts() {
           <button class="vault-btn delete" onclick="deleteContact(${c.id})" title="Delete">${ic("trash")}</button>
         </div>
       </div>`).join("");
-  } catch (err) { toast("Could not load contacts: " + err.message, "error"); }
+  } catch (err) { if (!err || err.kind !== "infra") toast("Could not load contacts: " + err.message, "error"); _loadErrorBox(document.getElementById("contactsList"), "contacts", loadContacts, err); }
 }
 async function deleteContact(id) {
   if (!confirm("Delete this contact?")) return;
@@ -1465,7 +1499,7 @@ async function loadWifi() {
     const si = document.getElementById("wifiFilter");
     if (si && si.value.trim()) { filterWifiList(si.value); return; }
     _renderWifi(_wifiCache, "");
-  } catch (err) { toast("Could not load WiFi: " + err.message, "error"); }
+  } catch (err) { if (!err || err.kind !== "infra") toast("Could not load WiFi: " + err.message, "error"); _loadErrorBox(document.getElementById("wifiList"), "wifi", loadWifi, err); }
 }
 
 function _renderWifi(rows, query) {
@@ -1559,7 +1593,7 @@ async function loadServers() {
           <button class="vault-btn delete" onclick="deleteServer(${s.id})" title="Delete">${ic("trash")}</button>
         </div>
       </div>`).join("");
-  } catch (err) { toast("Could not load servers: " + err.message, "error"); }
+  } catch (err) { if (!err || err.kind !== "infra") toast("Could not load servers: " + err.message, "error"); _loadErrorBox(document.getElementById("serversList"), "servers", loadServers, err); }
 }
 async function deleteServer(id) {
   if (!confirm("Delete this server?")) return;
@@ -1595,7 +1629,7 @@ async function loadRecovery() {
           <button class="vault-btn delete" onclick="deleteRecovery(${r.id})" title="Delete">${ic("trash")}</button>
         </div>
       </div>`).join("");
-  } catch (err) { toast("Could not load recovery phrases: " + err.message, "error"); }
+  } catch (err) { if (!err || err.kind !== "infra") toast("Could not load recovery phrases: " + err.message, "error"); _loadErrorBox(document.getElementById("recoveryList"), "recovery phrases", loadRecovery, err); }
 }
 function revealRecovery(id, words) {
   const el = document.getElementById("rec-" + id);
@@ -1818,7 +1852,7 @@ async function loadSnippets() {
         (shared ? '<div class="snippet-share-url"><span>Published at:</span><code>' + escapeHtml(url) + '</code><a class="vault-btn" href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Open page ↗</a></div>' : '<div class="snippet-share-url muted"><span>Not published — click Publish to deploy a standalone static page.</span></div>') +
       '</div>';
     }).join("");
-  } catch (err) { toast("Could not load snippets: " + err.message, "error"); }
+  } catch (err) { if (!err || err.kind !== "infra") toast("Could not load snippets: " + err.message, "error"); _loadErrorBox(document.getElementById("snippetsList"), "snippets", loadSnippets, err); }
 }
 
 /* Load a saved snippet into the editor. */
@@ -2588,18 +2622,111 @@ async function loadStats() {
 // when the page is restored from the browser's back/forward cache (bfcache),
 // which otherwise can resurrect a stale auth screen with the user's old form
 // data still in it.
+/* ==================== CLIENT-SIDE ROUTING ====================
+   Every section has a REAL URL (/vault, /code, /jobs …) — like a proper SaaS:
+     • switchTab pushes the path → browser back/forward walk sections
+     • refresh on /vault boots straight into Vault (no bounce to dashboard)
+     • links can be bookmarked/shared; logged-out visits to protected paths
+       bounce to /sign-in and RETURN after successful login. */
+const ROUTES = {
+  "/dashboard": "overview", "/vault": "vault", "/cards": "cards",
+  "/identities": "identities", "/contacts": "contacts", "/wifi": "wifi",
+  "/servers": "servers", "/seeds": "recovery", "/recovery": "recovery",
+  "/code": "code", "/jobs": "jobs", "/notes": "notes",
+  "/bookmarks": "bookmarks", "/tasks": "tasks", "/profile": "profile",
+};
+const TAB_PATHS = {};
+Object.keys(ROUTES).forEach(p => { if (!TAB_PATHS[ROUTES[p]]) TAB_PATHS[ROUTES[p]] = p; });
+const AUTH_ROUTES = {
+  "/sign-in": "screen-signin", "/login": "screen-signin",
+  "/sign-up": "screen-signup", "/forgot": "screen-forgot1",
+};
+let _routeNav = false;   // guard: a popstate-driven switchTab must not re-push
+
+function _clientPath() {
+  let p = (window.location.pathname || "/").replace(/\/+$/, "");
+  return p || "/";
+}
+
+/* Apply the current browser URL to app state. Returns a truthy tag when the
+   URL decided a screen (so callers don't fall back to the landing page). */
+function routeFromUrl() {
+  const p = _clientPath();
+  const hasToken = !!localStorage.getItem("ahad_token");
+  const _switch = (tab) => { _routeNav = true; switchTab(tab); _routeNav = false; };
+
+  if (p === "/activity") {
+    if (!hasToken) {
+      try { sessionStorage.setItem("ahad_return_to", p); } catch (e2) {}
+      history.replaceState({}, "", "/sign-in");
+      showScreen("screen-signin");
+      return "blocked";
+    }
+    showScreen("screen-dashboard");
+    if (currentTab !== "overview") _switch("overview");
+    if (typeof openActivityPanel === "function") openActivityPanel();
+    return "tab";
+  }
+  if (ROUTES[p]) {                                  // protected section URL
+    if (!hasToken) {                                // standard "return after login"
+      try { sessionStorage.setItem("ahad_return_to", p); } catch (e2) {}
+      history.replaceState({}, "", "/sign-in");
+      showScreen("screen-signin");
+      return "blocked";
+    }
+    showScreen("screen-dashboard");
+    if (ROUTES[p] !== currentTab) _switch(ROUTES[p]);
+    return "tab";
+  }
+  if (AUTH_ROUTES[p]) {
+    if (hasToken) {                                 // signed-in users skip auth screens
+      history.replaceState({}, "", "/dashboard");
+      showScreen("screen-dashboard");
+      if (currentTab !== "overview") _switch("overview");
+      return "tab";
+    }
+    showScreen(AUTH_ROUTES[p]);
+    return "auth";
+  }
+  if (p === "/" && hasToken) {                      // SaaS convention: / → /dashboard
+    try { history.replaceState({}, "", "/dashboard"); } catch (e3) {}
+    return "tab";
+  }
+  return null;
+}
+
+/* After successful login/verification: go back where the user wanted to be. */
+function _consumeReturnTo() {
+  let rt = null;
+  try { rt = sessionStorage.getItem("ahad_return_to"); } catch (e) {}
+  if (rt && (ROUTES[rt] || rt === "/activity")) {
+    try { sessionStorage.removeItem("ahad_return_to"); } catch (e2) {}
+    try { history.replaceState({}, "", rt); } catch (e3) {}
+    _routeNav = true;
+    switchTab(ROUTES[rt] || "overview");
+    _routeNav = false;
+    if (rt === "/activity" && typeof openActivityPanel === "function") openActivityPanel();
+  } else {
+    try { history.replaceState({}, "", "/dashboard"); } catch (e4) {}
+  }
+}
+
+// Browser back/forward: derive the visible screen purely from the URL.
+window.addEventListener("popstate", () => { routeFromUrl(); });
+
 function reconcileScreen() {
   const hasToken = !!localStorage.getItem("ahad_token");
   if (hasToken) {
     authToken = localStorage.getItem("ahad_token");
     showScreen("screen-dashboard");
     loadDashboard().catch(() => { /* loadDashboard handles its own errors */ });
+    routeFromUrl();   // honor deep links (/vault, /code…) after auth restore
   } else if (localStorage.getItem("ahad_signup_username")) {
     // A verification was in progress — keep them on the OTP screen.
     restoreOtpScreen();
   } else {
     authToken = null;
-    showScreen("screen-landing");
+    if (!routeFromUrl()) showScreen("screen-landing");  // /sign-in / protected / plain
   }
 }
 
@@ -2615,10 +2742,33 @@ window.addEventListener("pageshow", (event) => {
 });
 
 /* Fatal-error visibility: a silent exception used to leave buttons dead with
-   no explanation. Surface it once so a real bug can never hide again. */
+   no explanation. Surface it once so a real bug can never hide again.
+   Errors DURING BOOT get a friendly full-screen "something went wrong —
+   reload" page (our error boundary), so the app never renders half-dead. */
 let _fatalToasts = 0;
+let _bootOk = false;   // flips true once DOMContentLoaded wiring finishes
+
+function _fatalOverlay(message) {
+  if (document.getElementById("fatalOverlay")) return;
+  const div = document.createElement("div");
+  div.id = "fatalOverlay";
+  div.className = "fatal-overlay";
+  div.innerHTML =
+    '<div class="fatal-card">' +
+      '<div class="fatal-ic">' + ic("alert") + '</div>' +
+      '<h1>Something went wrong</h1>' +
+      '<p>The app hit an unexpected error while starting up. Reloading usually fixes it.</p>' +
+      (message ? '<code>' + escapeHtml(String(message).slice(0, 200)) + '</code>' : '') +
+      '<div class="fatal-btns"><button class="btn-primary" onclick="window.location.reload()">Reload</button>' +
+      '<button class="btn-ghost" onclick="document.getElementById(\'fatalOverlay\').remove()">Keep trying</button></div>' +
+    '</div>';
+  document.body.appendChild(div);
+}
+
 window.addEventListener("error", (e) => {
-  if (!e || !e.message || _fatalToasts >= 3) return;
+  if (!e || !e.message) return;
+  if (!_bootOk) { _fatalOverlay(e.message); return; }
+  if (_fatalToasts >= 3) return;
   _fatalToasts += 1;
   toast("UI error: " + String(e.message).slice(0, 120), "error");
 });
@@ -2887,14 +3037,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---- Boot: decide the screen SYNCHRONOUSLY (no flash) ----
   if (authToken) {
     showScreen("screen-dashboard");
-    loadDashboard().catch(() => showScreen("screen-landing"));
+    loadDashboard().catch(() => { /* infra-safe: banner + retry inside */ });
+    routeFromUrl();          // direct hit on /vault etc. → open that section
   } else if (localStorage.getItem("ahad_signup_username")) {
     // A verification was in progress (e.g. user switched to their mail app and
     // the page reloaded). Restore the OTP screen so they can finish verifying.
     restoreOtpScreen();
   } else {
-    showScreen("screen-landing");
+    if (!routeFromUrl()) showScreen("screen-landing");  // deep link or plain visit
   }
+
+  // Boot accomplished — a fatal error from here gets a toast, not the overlay.
+  _bootOk = true;
 
   // Drop the boot splash now that a screen has been chosen.
   document.documentElement.classList.remove("booting");
@@ -2971,11 +3125,7 @@ async function loadJobs() {
     const sig = "ERR:" + e.message;
     if (sig === _lastJobsSig) return;
     _lastJobsSig = sig;
-    list.innerHTML = "";
-    const div = document.createElement("div");
-    div.className = "job-card";
-    div.innerHTML = '<span class="job-dot offline"></span><span class="job-meta">' + escapeHtml(e.message) + "</span>";
-    list.appendChild(div);
+    _loadErrorBox(list, "jobs", loadJobs, e);   // inline error + retry, never a stuck state
   }
 }
 
