@@ -101,6 +101,9 @@ let _toastEl = null, _toastTimer = null, _toastKey = null;
 function toast(message, type = "success") {
   const container = document.getElementById("toastContainer");
   if (!container) return;
+  // While the server is down the banner already says everything — suppress
+  // the wave of identical per-section "Could not load …" toasts.
+  if (_netDown && typeof message === "string" && message.indexOf("Could not load") === 0) return;
   const key = type + "|" + message;
   clearTimeout(_toastTimer);
 
@@ -252,11 +255,22 @@ async function api(path, method = "POST", body = null, auth = false) {
   const headers = { "Content-Type": "application/json" };
   if (auth && authToken) headers["Authorization"] = "Bearer " + authToken;
 
-  const res = await fetch(API + path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : null
-  });
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : null
+    });
+  } catch (netErr) {
+    // Server down / sleeping (free plan) / no internet — this is INFRA, not
+    // a user error. Banner (not 11 racing toasts) + marked error kind so the
+    // dashboard keeps the session and retries instead of logging you out.
+    _serverDown();
+    const e = new Error("Server unreachable — it may be waking up (~30-60s on the free plan). Please wait…");
+    e.kind = "infra";
+    throw e;
+  }
 
   if (res.status === 401 && auth) {
     localStorage.removeItem("ahad_token");
@@ -267,9 +281,44 @@ async function api(path, method = "POST", body = null, auth = false) {
     throw new Error("Session expired.");
   }
 
+  // Proxy-level failures while the service is cold (502/503/504) are infra.
+  if (res.status >= 502 && res.status <= 504) {
+    _serverDown();
+    const e = new Error("Server is waking up (HTTP " + res.status + ") — please wait a moment…");
+    e.kind = "infra";
+    throw e;
+  }
+  _serverUp();  // any well-formed response = the backend is alive again
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || "Something went wrong");
   return data;
+}
+
+/* ---------------- SERVER-UP BANNER ----------------
+   One sticky banner while the backend is unreachable, instead of a dozen
+   racing "Could not load …" toasts. Heals itself on the next good response. */
+let _netDown = false;
+function _serverDown() {
+  if (_netDown) return;
+  _netDown = true;
+  let b = document.getElementById("netBanner");
+  if (!b) {
+    b = document.createElement("div");
+    b.id = "netBanner";
+    b.className = "net-banner";
+    document.body.appendChild(b);
+    b.addEventListener("click", () => window.location.reload());
+  }
+  b.innerHTML = `${ic("refresh")}<span>Server is waking up — please wait ~30-60s (free plan). The page retries by itself…</span>`;
+  requestAnimationFrame(() => b.classList.add("show"));
+}
+function _serverUp() {
+  if (!_netDown) return;
+  _netDown = false;
+  const b = document.getElementById("netBanner");
+  if (b) b.classList.remove("show");
+  toast("Back online ✓", "success");
 }
 
 function setLoading(btn, loading) {
@@ -786,10 +835,19 @@ async function handleForgot3(e) {
 }
 
 /* ==================== DASHBOARD ==================== */
+let _dashRetries = 0, _dashRetryTimer = null;
+function _scheduleDashboardRetry() {
+  if (_dashRetries >= 8) return;          // give up after ~2 min — banner stays up
+  _dashRetries += 1;
+  clearTimeout(_dashRetryTimer);
+  _dashRetryTimer = setTimeout(() => { if (authToken) loadDashboard(); }, Math.min(4000 * _dashRetries, 20000));
+}
+
 async function loadDashboard() {
   // 1) Critical auth check — ONLY a profile/401 failure ends the session.
   try {
     const profile = await api("/profile", "GET", null, true);
+    _dashRetries = 0;                     // healthy again — reset the backoff
     document.getElementById("dashUsername").textContent = profile.username;
     document.getElementById("dashUsername2").textContent = profile.username;
     document.getElementById("profileUsername").value = profile.username;
@@ -807,6 +865,9 @@ async function loadDashboard() {
     loadSessionsList();
   } catch (err) {
     console.error("Dashboard auth error:", err);
+    // Infra failure (server asleep / 502-504 / no network): the session is
+    // VALID — do NOT log the user out. Banner retries in the background.
+    if (err && err.kind === "infra") { _scheduleDashboardRetry(); return; }
     toast("Session expired. Please login again.", "error");
     authToken = null;
     localStorage.removeItem("ahad_token");
@@ -2553,9 +2614,19 @@ window.addEventListener("pageshow", (event) => {
   }
 });
 
+/* Fatal-error visibility: a silent exception used to leave buttons dead with
+   no explanation. Surface it once so a real bug can never hide again. */
+let _fatalToasts = 0;
+window.addEventListener("error", (e) => {
+  if (!e || !e.message || _fatalToasts >= 3) return;
+  _fatalToasts += 1;
+  toast("UI error: " + String(e.message).slice(0, 120), "error");
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   // Logout
-  document.getElementById("btnLogout").addEventListener("click", async () => {
+  const btnLogoutEl = document.getElementById("btnLogout");
+  if (btnLogoutEl) btnLogoutEl.addEventListener("click", async () => {
     try { await api("/logout", "POST", null, true); } catch (e) {}
     logEvent("info", "Signed out", "Session ended");
     authToken = null;
@@ -2650,9 +2721,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   const snippetLanguage = document.getElementById("snippetLanguage");
   if (snippetLanguage) snippetLanguage.addEventListener("change", () => { syncRunPreviewButtons(); runLivePreview(); });
-  syncRunPreviewButtons();
-  initIdeDivider();
-  initGutterScroll();
+  // These editor helpers must never block the wiring of the REST of the app.
+  try { syncRunPreviewButtons(); } catch (e) { console.error("syncRunPreviewButtons:", e); }
+  try { initIdeDivider(); } catch (e) { console.error("initIdeDivider:", e); }
+  try { initGutterScroll(); } catch (e) { console.error("initGutterScroll:", e); }
   const btnEditorFull = document.getElementById("btnEditorFull");
   if (btnEditorFull) btnEditorFull.addEventListener("click", toggleEditorFullscreen);
   document.addEventListener("keydown", e => {

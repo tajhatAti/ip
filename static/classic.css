@@ -1398,3 +1398,23 @@ body.ed-full { overflow: hidden !important; }
 }
 .share-url { font-family: var(--mono); font-size: 11.5px; color: var(--acc); word-break: break-all; }
 .share-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+/* ============================================================
+§26  Server-waking banner (infra failures, replaces toast floods)
+============================================================ */
+.net-banner {
+  position: fixed; top: 14px; left: 50%; z-index: 9990;
+  transform: translate(-50%, -130%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel) !important; color: var(--ink);
+  border: 1px solid var(--line) !important; border-left: 3px solid var(--acc) !important;
+  border-radius: var(--r-sm) !important; padding: 10px 16px;
+  font-family: var(--sans); font-size: 13px; line-height: 1.45;
+  box-shadow: var(--shadow-md); max-width: min(560px, calc(100vw - 28px));
+  cursor: pointer; opacity: 0;
+  transition: transform .35s cubic-bezier(.16,1,.3,1), opacity .3s ease;
+}
+.net-banner.show { transform: translate(-50%, 0); opacity: 1; }
+.net-banner .ic { color: var(--acc); font-size: 16px; flex: 0 0 auto; animation: netspin 1.6s linear infinite; }
+.net-banner span { flex: 1 1 auto; }
+@keyframes netspin { to { transform: rotate(360deg); } }
