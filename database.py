@@ -349,6 +349,7 @@ _SCHEMA_TABLES = [
         reset_otp TEXT,
         reset_otp_created_at TEXT,
         reset_verified INTEGER NOT NULL DEFAULT 0,
+        password_changed_at TEXT,
         otp_attempts INTEGER NOT NULL DEFAULT 0,
         reset_otp_attempts INTEGER NOT NULL DEFAULT 0,
         role TEXT NOT NULL DEFAULT 'user',
@@ -655,6 +656,8 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN otp_attempts INTEGER NOT NULL DEFAULT 0")
         if not _column_exists(conn, "users", "reset_otp_attempts"):
             conn.execute("ALTER TABLE users ADD COLUMN reset_otp_attempts INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "users", "password_changed_at"):
+            conn.execute("ALTER TABLE users ADD COLUMN password_changed_at TEXT")
 
         conn.commit()
     finally:

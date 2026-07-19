@@ -198,6 +198,17 @@ class TwoFactorVerify(BaseModel):
     temp_token: Optional[str] = None
 
 
+class TwoFactorConfirm(BaseModel):
+    """password + current 2FA code — required for disable / regen backup codes."""
+    password: str
+    code: str
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+    totp_code: Optional[str] = None
+
 # ----------------------------
 # DB Helpers
 # ----------------------------
@@ -774,9 +785,9 @@ def reset_password(payload: ResetPassword, request: Request):
         hashed_pw = hash_password(new_password)
         cursor.execute("""
             UPDATE users SET password=?, reset_otp=NULL, reset_otp_created_at=NULL,
-                reset_verified=0, updated_at=?
+                reset_verified=0, password_changed_at=?, updated_at=?
             WHERE id=?
-        """, (hashed_pw, now_utc_str(), row["id"]))
+        """, (hashed_pw, now_utc_str(), now_utc_str(), row["id"]))
         # Reset password -> log out of all devices for safety
         cursor.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
         conn.commit()
@@ -799,6 +810,7 @@ def get_profile(authorization: Optional[str] = Header(None)):
         "custom_code": user["custom_code"],
         "links": links,
         "created_at": user["created_at"],
+        "password_changed_at": user["password_changed_at"] if "password_changed_at" in user.keys() else None,
     }
 
 
@@ -921,9 +933,88 @@ def delete_account(payload: AccountDelete, authorization: Optional[str] = Header
         conn.close()
 
 
+@app.post("/account/change-password")
+def change_password(payload: ChangePassword, authorization: Optional[str] = Header(None), request: Request = None):
+    """In-settings password change (user is already signed in):
+       current password + new password, PLUS an authenticator code when
+       2FA is enabled. On success EVERY other session/device is signed out —
+       only the session making the change survives."""
+    user, current = get_current_user_and_session(authorization)
+    rate_limit(f"{client_ip(request) if request else 'na'}:changepw:{user['id']}")
+
+    if not verify_password(payload.current_password, user["password"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    new_password = validate_password(payload.new_password)
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="New password must be different from the current one.")
+
+    conn = get_db_connection()
+    try:
+        # Extra proof for accounts protected with 2FA
+        row = conn.execute(
+            "SELECT is_enabled FROM user_2fa WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+        if row and row["is_enabled"]:
+            if not (payload.totp_code or "").strip():
+                raise HTTPException(status_code=400, detail="Enter your authenticator code to confirm.")
+            _verify_second_factor(conn, user["id"], payload.totp_code)
+
+        conn.execute(
+            "UPDATE users SET password=?, password_changed_at=?, updated_at=? WHERE id=?",
+            (hash_password(new_password), now_utc_str(), now_utc_str(), user["id"]),
+        )
+        # Security standard: a password change kicks out every OTHER device.
+        cur = conn.execute(
+            "DELETE FROM sessions WHERE user_id = ? AND id != ?", (user["id"], current["id"])
+        )
+        conn.commit()
+        revoked = getattr(cur, "rowcount", 0) or 0
+        _log_security_event(conn, user["id"], "password_changed",
+                            f"Password changed from Settings · {revoked} other device(s) signed out")
+        return {
+            "message": "Password updated. For your security, all other devices have been signed out.",
+            "other_sessions_revoked": revoked,
+        }
+    finally:
+        conn.close()
+
+
 # ----------------------------
 # Two-Factor Authentication (2FA)
 # ----------------------------
+def _log_security_event(conn, user_id: int, action: str, details: str):
+    """Fire-and-forget security event into the user-visible activity log."""
+    try:
+        conn.execute(
+            "INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, f"security:{action}", details, "", now_utc_str()),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+
+def _verify_second_factor(conn, user_id: int, code: str) -> tuple:
+    """Verify a 6-digit TOTP code OR a single-use backup code for `user_id`.
+    Returns (row, remaining_backup_count) on success, raises 400 otherwise.
+    A used backup code is consumed (removed) immediately."""
+    row = conn.execute("SELECT * FROM user_2fa WHERE user_id = ?", (user_id,)).fetchone()
+    if not row or not row["is_enabled"]:
+        raise HTTPException(status_code=400, detail="2FA is not enabled on this account.")
+    code = (code or "").strip()
+    backup_codes = json.loads(row["backup_codes"] or "[]")
+    if code and code.lower() in [c.lower() for c in backup_codes]:
+        remaining = [c for c in backup_codes if c.lower() != code.lower()]
+        conn.execute("UPDATE user_2fa SET backup_codes=?, updated_at=? WHERE user_id=?",
+                     (json.dumps(remaining), now_utc_str(), user_id))
+        conn.commit()
+        return row, len(remaining)
+    totp = pyotp.TOTP(row["secret"])
+    if not totp.verify(code):
+        raise HTTPException(status_code=400, detail="Incorrect authenticator code.")
+    return row, len(backup_codes)
+
+
 @app.get("/2fa/status")
 def get_2fa_status(authorization: Optional[str] = Header(None)):
     user, _ = get_current_user_and_session(authorization)
@@ -951,8 +1042,8 @@ def setup_2fa(payload: TwoFactorSetup, authorization: Optional[str] = Header(Non
             # Generate new TOTP secret
             secret = pyotp.random_base32()
             
-            # Generate backup codes
-            backup_codes = [secrets.token_hex(8) for _ in range(8)]
+            # Generate backup codes (10 × single-use)
+            backup_codes = [secrets.token_hex(8) for _ in range(10)]
             
             # Store temporarily (not enabled yet)
             if DIALECT == "postgres":
@@ -993,10 +1084,50 @@ def setup_2fa(payload: TwoFactorSetup, authorization: Optional[str] = Header(Non
                 "message": "Scan the QR code with your authenticator app"
             }
         else:
-            # Disable 2FA
-            conn.execute("DELETE FROM user_2fa WHERE user_id = ?", (user["id"],))
-            conn.commit()
-            return {"message": "2FA disabled successfully"}
+            # Disabling 2FA is a sensitive action — it MUST go through
+            # /2fa/disable, which re-verifies password + a current code.
+            raise HTTPException(
+                status_code=400,
+                detail="To disable 2FA, confirm with your password and an authenticator code."
+            )
+    finally:
+        conn.close()
+
+
+@app.post("/2fa/disable")
+def disable_2fa(payload: TwoFactorConfirm, authorization: Optional[str] = Header(None)):
+    """Disable 2FA — requires the account password AND a valid current
+    authenticator (or backup) code. One-click disable is never allowed."""
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        if not verify_password(payload.password, user["password"]):
+            raise HTTPException(status_code=400, detail="Incorrect password.")
+        _verify_second_factor(conn, user["id"], payload.code)
+        conn.execute("DELETE FROM user_2fa WHERE user_id = ?", (user["id"],))
+        conn.commit()
+        _log_security_event(conn, user["id"], "2fa_disabled", "Two-factor authentication was disabled")
+        return {"message": "Two-factor authentication disabled."}
+    finally:
+        conn.close()
+
+
+@app.post("/2fa/backup-codes")
+def regenerate_backup_codes(payload: TwoFactorConfirm, authorization: Optional[str] = Header(None)):
+    """Mint 10 fresh single-use backup codes (old ones stop working).
+    Requires password + a valid current authenticator code."""
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        if not verify_password(payload.password, user["password"]):
+            raise HTTPException(status_code=400, detail="Incorrect password.")
+        _verify_second_factor(conn, user["id"], payload.code)
+        codes = [secrets.token_hex(8) for _ in range(10)]
+        conn.execute("UPDATE user_2fa SET backup_codes=?, updated_at=? WHERE user_id=?",
+                     (json.dumps(codes), now_utc_str(), user["id"]))
+        conn.commit()
+        _log_security_event(conn, user["id"], "2fa_backup_regenerated", "Backup codes were regenerated")
+        return {"backup_codes": codes, "message": "New backup codes generated."}
     finally:
         conn.close()
 
@@ -1018,11 +1149,15 @@ def verify_2fa_setup(payload: TwoFactorVerify, authorization: Optional[str] = He
             raise HTTPException(status_code=400, detail="Invalid verification code")
         
         # Enable 2FA
-        conn.execute("UPDATE user_2fa SET is_enabled=1, updated_at=? WHERE user_id=?", 
+        conn.execute("UPDATE user_2fa SET is_enabled=1, updated_at=? WHERE user_id=?",
                      (now_utc_str(), user["id"]))
         conn.commit()
-        
-        return {"message": "2FA enabled successfully!"}
+        _log_security_event(conn, user["id"], "2fa_enabled", "Two-factor authentication was enabled")
+
+        # Hand the freshly-minted backup codes to the final setup screen so
+        # the user can download/copy them (this is the ONLY time they see them).
+        codes = json.loads(row["backup_codes"] or "[]")
+        return {"message": "2FA enabled successfully!", "backup_codes": codes}
     finally:
         conn.close()
 
@@ -2898,19 +3033,39 @@ def export_user_data(authorization: Optional[str] = Header(None)):
             "created_at": user["created_at"]
         }
 
-        notes = conn.execute("SELECT * FROM user_notes WHERE user_id = ?", (user["id"],)).fetchall()
-        bookmarks = conn.execute("SELECT * FROM user_bookmarks WHERE user_id = ?", (user["id"],)).fetchall()
-        vault = conn.execute("SELECT * FROM vault_entries WHERE user_id = ?", (user["id"],)).fetchall()
-        cards = conn.execute("SELECT * FROM user_cards WHERE user_id = ?", (user["id"],)).fetchall()
-        tasks = conn.execute("SELECT * FROM user_tasks WHERE user_id = ?", (user["id"],)).fetchall()
+        def _rows(table):
+            return [dict(r) for r in conn.execute(
+                f"SELECT * FROM {table} WHERE user_id = ?", (user["id"],)
+            ).fetchall()]
+
+        notes = _rows("user_notes")
+        bookmarks = _rows("user_bookmarks")
+        vault = _rows("vault_entries")
+        cards = _rows("user_cards")
+        tasks = _rows("user_tasks")
+        identities = _rows("user_identities")
+        contacts = _rows("user_contacts")
+        wifi = _rows("user_wifi")
+        servers = _rows("user_servers")
+        recovery = _rows("user_recovery")
+        try:
+            snippets = _rows("snippets")
+        except Exception:
+            snippets = []
 
         return {
             "user": user_data,
-            "notes": [dict(n) for n in notes],
-            "bookmarks": [dict(b) for b in bookmarks],
-            "vault": [dict(v) for v in vault],
-            "cards": [dict(c) for c in cards],
-            "tasks": [dict(t) for t in tasks],
+            "notes": notes,
+            "bookmarks": bookmarks,
+            "vault": vault,
+            "cards": cards,
+            "tasks": tasks,
+            "identities": identities,
+            "contacts": contacts,
+            "wifi": wifi,
+            "servers": servers,
+            "recovery": recovery,
+            "snippets": snippets,
             "exported_at": now_utc_str()
         }
     finally:

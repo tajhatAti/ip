@@ -1091,3 +1091,157 @@ body.ed-full { overflow: hidden !important; }
 .ed-exit:hover { transform: translateY(-1px); border-color: var(--acc) !important; }
 .ed-exit:active { transform: scale(.97); }
 #btnEditorFull.on { color: var(--acc) !important; }
+
+/* ================= 23. MODALS + SETTINGS GROUPS (export/2FA/password) == */
+.ah-modal {
+  position: fixed !important; inset: 0 !important; z-index: 5500 !important;
+  background: var(--scrim) !important;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  padding: 16px !important; overflow-y: auto !important;
+  opacity: 0; transition: opacity .16s var(--ease) !important;
+}
+.ah-modal.open { opacity: 1; }
+.ah-modal-card {
+  background: var(--panel) !important; border: 1px solid var(--line) !important;
+  border-radius: var(--r-lg) !important; box-shadow: var(--shadow-l) !important;
+  width: 100% !important; max-width: 460px !important; max-height: calc(100vh - 48px);
+  overflow-y: auto !important; padding: 22px 22px 24px !important;
+  transform: translateY(10px) scale(.985); transition: transform .18s var(--ease) !important;
+}
+.ah-modal.open .ah-modal-card { transform: none; }
+.ah-modal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.ah-modal-head h3 {
+  font-family: var(--serif) !important; font-weight: 600 !important;
+  color: var(--ink) !important; font-size: 19px !important; flex: 1; margin: 0 !important;
+}
+.ah-x {
+  background: transparent !important; border: 1px solid var(--line) !important;
+  border-radius: 8px !important; color: var(--muted) !important;
+  width: 30px; height: 30px; cursor: pointer; flex: none;
+}
+.ah-x:hover { border-color: var(--ink) !important; color: var(--ink) !important; }
+
+/* step dots (2FA wizard) */
+.ah-steps { display: flex; gap: 7px; margin: -4px 0 16px; }
+.ah-dot { width: 22px; height: 3.5px; border-radius: 99px; background: var(--line); transition: background .2s; }
+.ah-dot.on { background: var(--acc); }
+
+/* ---- export modal ---- */
+.warn-box {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: rgba(230, 129, 25, .10) !important; border: 1px solid rgba(230, 129, 25, .4) !important;
+  color: var(--ink) !important; border-radius: var(--r-sm) !important;
+  padding: 11px 12px; font-size: 12.5px; line-height: 1.45; margin-bottom: 14px;
+}
+.warn-box .ic { font-size: 17px; color: var(--acc); margin-top: 1px; }
+.exp-opts { display: flex; flex-direction: column; gap: 9px; }
+.exp-opt {
+  display: flex !important; align-items: center !important; gap: 12px !important;
+  text-align: left !important; background: var(--paper) !important;
+  border: 1px solid var(--line) !important; border-radius: var(--r-md) !important;
+  padding: 12px 14px !important; cursor: pointer;
+  transition: border-color .16s var(--ease), transform .16s var(--ease) !important;
+}
+.exp-opt:hover { border-color: var(--acc) !important; transform: translateY(-1px); }
+.exp-ic {
+  width: 38px; height: 38px; flex: none; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.exp-ic .ic { font-size: 18px; color: var(--acc); }
+.exp-opt b { display: block; color: var(--ink); font-size: 14px; }
+.exp-opt small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.4; }
+.exp-pw { display: flex; gap: 8px; padding: 2px 2px 4px; }
+.exp-pw input { flex: 1; }
+
+/* ---- 2FA wizard ---- */
+.tfa-hero { text-align: center; color: var(--acc); font-size: 40px; margin: 6px 0 12px; }
+.tfa-p { color: var(--ink-2); font-size: 13.5px; line-height: 1.6; margin: 0 0 12px; }
+.tfa-ok {
+  display: flex; align-items: center; gap: 8px; color: var(--green);
+  font-size: 13.5px; font-weight: 600; margin: 0 0 12px;
+}
+.tfa-ok .ic { font-size: 17px; }
+.tfa-qr { display: grid; place-items: center; margin: 10px 0 16px; }
+.tfa-qr img { background: #fff; padding: 12px; border-radius: 14px; border: 1px solid var(--line); width: 208px; height: 208px; }
+.tfa-manual {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 9px 11px; margin-bottom: 16px;
+}
+.tfa-manual code {
+  flex: 1; min-width: 180px; font-family: var(--mono); font-size: 13.5px;
+  color: var(--acc); letter-spacing: .06em; word-break: break-all;
+}
+.tfa-otp { margin: 14px 0 6px; }
+.tfa-err { color: var(--red) !important; font-size: 12.5px; text-align: center; min-height: 17px; margin: 0 0 8px; }
+.tfa-status { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.tfa-meta { color: var(--muted); font-size: 12.5px; }
+.tfa-man-block { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.tfa-man-block h4 { color: var(--ink) !important; font-size: 14px; margin: 0 0 4px !important; }
+.tfa-man-block p { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+.tfa-mini { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.tfa-dis-btn { color: var(--red) !important; }
+.danger-lite h4 { color: var(--red) !important; }
+.bc-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  background: var(--paper) !important; border: 1px solid var(--line) !important;
+  border-radius: var(--r-sm) !important; padding: 12px !important; margin-bottom: 12px;
+}
+.bc-grid code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 8px; text-align: center; word-break: break-all;
+}
+.bc-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.bc-actions .vault-btn { flex: 1; justify-content: center; }
+.bc-confirm { display: flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: 13px; margin: 2px 0 14px; cursor: pointer; }
+.bc-confirm input { width: 16px; height: 16px; accent-color: var(--acc); }
+#tfaDoneBtn:disabled { opacity: .45 !important; cursor: not-allowed !important; }
+
+/* ---- chips ---- */
+.chip {
+  font-family: var(--mono); font-size: 10px !important; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 99px; padding: 2.5px 9px;
+  vertical-align: middle; display: inline-block;
+}
+.chip.on { color: var(--green); border-color: rgba(30, 122, 60, .45); background: rgba(30, 122, 60, .08); }
+.chip.sm { font-size: 9px !important; padding: 1.5px 7px; }
+
+/* ---- sessions list ---- */
+.sess-list { display: flex; flex-direction: column; gap: 8px; }
+.sess-row {
+  display: flex; align-items: center; gap: 11px;
+  background: var(--paper) !important; border: 1px solid var(--line) !important;
+  border-radius: var(--r-sm) !important; padding: 10px 12px;
+}
+.sess-ic { flex: none; font-size: 18px; color: var(--acc); display: inline-flex; }
+.sess-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sess-tx b { color: var(--ink); font-size: 13px; font-weight: 600; }
+.sess-tx small { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- settings sub-groups (GitHub-style) ---- */
+.set-group { padding: 18px !important; }
+.set-row { display: flex; gap: 13px; margin-bottom: 14px; align-items: flex-start; }
+.set-ic {
+  width: 40px; height: 40px; flex: none; border-radius: 11px;
+  background: var(--paper) !important; border: 1px solid var(--line) !important;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.set-ic .ic { font-size: 19px; color: var(--acc); }
+.set-tx { flex: 1; min-width: 0; }
+.set-tx h3 { font-family: var(--sans) !important; font-size: 14.5px !important; font-weight: 650 !important; color: var(--ink) !important; margin: 0 0 4px !important; }
+.set-tx p { color: var(--ink-2) !important; font-size: 12.5px; line-height: 1.5; margin: 0; }
+.set-meta { color: var(--muted) !important; font-size: 11.5px !important; margin-top: 5px !important; font-family: var(--mono); }
+.profile-grid .profile-card + .profile-card { margin-top: 0; }
+.pw-done { text-align: center; padding: 10px 0 4px; }
+.pw-done h3 { font-family: var(--serif); color: var(--ink); margin: 12px 0 6px; }
+.pw-done p { margin-bottom: 16px; }
+.strength { height: 4px; border-radius: 99px; background: var(--paper-2); overflow: hidden; margin: -6px 0 4px; }
+.strength > div { height: 100%; width: 0; border-radius: 99px; transition: width .3s var(--ease), background .3s; }
+.strength-label { font-size: 11.5px; color: var(--muted); min-height: 15px; margin: 0 0 10px; }
+@media (max-width: 520px) {
+  .bc-grid { grid-template-columns: 1fr; }
+  .ah-modal-card { padding: 18px 16px 20px !important; }
+}

@@ -86,6 +86,8 @@ function switchTab(tabId) {
   });
   // ⚡ Jobs tab: live-refresh statuses while it's open, stop polling otherwise.
   if (tabId === "jobs") { startJobPolling(); } else { stopJobPolling(); }
+  // ⚙️ Settings: keep the security panel truthful every time it opens.
+  if (tabId === "profile") { refreshSecurityPanel(); loadSessionsList(); }
 }
 
 /* ---------------- TOAST ---------------- */
@@ -797,6 +799,9 @@ async function loadDashboard() {
       const days = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24));
       document.getElementById("statDays").textContent = days || 1;
     }
+    _lastProfile = profile;
+    refreshSecurityPanel();
+    loadSessionsList();
   } catch (err) {
     console.error("Dashboard auth error:", err);
     toast("Session expired. Please login again.", "error");
@@ -2016,18 +2021,153 @@ async function saveProfile() {
   catch (err) { toast(err.message, "error"); }
 }
 
-async function exportData() {
+/* ==================== MODAL SHELL (shared) ==================== */
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.remove("hidden");
+  m.classList.add("open");
+}
+function closeModal(elOrId) {
+  const m = typeof elOrId === "string" ? document.getElementById(elOrId) : elOrId;
+  if (!m) return;
+  m.classList.remove("open");
+  setTimeout(() => m.classList.add("hidden"), 160);
+}
+// overlay click + [data-close] buttons close any ah-modal; Esc closes the top one
+document.addEventListener("click", e => {
+  if (e.target.classList && e.target.classList.contains("ah-modal")) closeModal(e.target);
+  const closer = e.target.closest && e.target.closest("[data-close]");
+  if (closer) { const m = closer.closest(".ah-modal"); if (m) closeModal(m); }
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (document.querySelector(".cs-canvas.full")) return; // fullscreen owns Esc
+  const open = document.querySelector(".ah-modal.open");
+  if (open) closeModal(open);
+});
+
+/* ==================== DATA EXPORT / BACKUP ==================== */
+function openExportModal() {
+  document.getElementById("expPwRow").classList.add("hidden");
+  const pw = document.getElementById("expPw"); if (pw) pw.value = "";
+  openModal("exportModal");
+}
+async function _fetchExport() { return api("/export-data", "GET", null, true); }
+function _backupName(ext) {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return `ahadco-backup-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.${ext}`;
+}
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* Human-readable backup: a complete standalone HTML document, organised by
+   section with clean tables — opens/prints nicely in any browser. */
+function buildBackupHTML(data) {
+  const esc = t => escapeHtml(t == null ? "" : String(t));
+  const dt = t => { try { return t ? new Date(t).toLocaleString() : ""; } catch (e) { return t || ""; } };
+  const u = data.user || {};
+  const sec = (title, rows, cols) => {
+    const items = rows || [];
+    if (!items.length) return `<section><h2>${esc(title)} <span class="cnt">0</span></h2><p class="empty">Nothing saved here.</p></section>`;
+    const head = cols.map(c => `<th>${esc(c[0])}</th>`).join("");
+    const body = items.map(r => `<tr>${cols.map(c => `<td>${esc(c[1](r))}</td>`).join("")}</tr>`).join("");
+    return `<section><h2>${esc(title)} <span class="cnt">${items.length}</span></h2><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></section>`;
+  };
+  const parts = [
+    sec("Vault Items", data.vault, [["Type", r => r.type], ["Label", r => r.label], ["Value / secret", r => r.value], ["Added", r => dt(r.created_at)]]),
+    sec("Cards", data.cards, [["Nickname", r => r.nickname || r.label], ["Number", r => r.number], ["Holder", r => r.holder], ["Expiry", r => r.expiry], ["CVV", r => r.cvv], ["Added", r => dt(r.created_at)]]),
+    sec("Notes", data.notes, [["Title", r => r.title], ["Content", r => r.content], ["Pinned", r => r.pinned ? "Yes" : ""], ["Updated", r => dt(r.updated_at || r.created_at)]]),
+    sec("Bookmarks", data.bookmarks, [["Title", r => r.title], ["URL", r => r.url], ["Category", r => r.category], ["Notes", r => r.description], ["Added", r => dt(r.created_at)]]),
+    sec("Tasks", data.tasks, [["Task", r => r.title], ["Done", r => r.completed ? "Yes" : "No"], ["Priority", r => ({ 0: "Normal", 1: "Important", 2: "Urgent" }[r.priority] ?? r.priority)], ["Added", r => dt(r.created_at)]]),
+    sec("Identities", data.identities, [["Type", r => r.type], ["Label", r => r.label], ["Details", r => { try { const o = JSON.parse(r.fields || "{}"); return Object.entries(o).map(([k, v]) => `${k}: ${v}`).join(" · "); } catch (e) { return r.fields; } }], ["Added", r => dt(r.created_at)]]),
+    sec("Contacts", data.contacts, [["Name", r => r.name], ["Phone", r => r.phone], ["Email", r => r.email], ["Notes", r => r.note], ["Added", r => dt(r.created_at)]]),
+    sec("WiFi Networks", data.wifi, [["SSID", r => r.ssid], ["Password", r => r.password], ["Security", r => r.security], ["Location", r => r.location], ["Added", r => dt(r.created_at)]]),
+    sec("Servers", data.servers, [["Name", r => r.name], ["Host", r => r.host], ["Port", r => r.port], ["Username", r => r.username], ["Password", r => r.password], ["Notes", r => r.note]]),
+    sec("Recovery Phrases", data.recovery, [["Label", r => r.label], ["Words", r => r.words], ["Word count", r => r.word_count], ["Added", r => dt(r.created_at)]]),
+    sec("Code Snippets", data.snippets, [["Title", r => r.title], ["Language", r => r.language], ["Code", r => r.content], ["Updated", r => dt(r.updated_at || r.created_at)]]),
+  ].join("\n");
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ahad Co backup — ${esc(u.username || "")}</title>
+<style>
+  body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f6f4ee;color:#1b1710;margin:0;padding:32px 18px;}
+  main{max-width:900px;margin:0 auto;background:#fff;border:1px solid #e3ddcd;border-radius:14px;padding:30px 34px;box-shadow:0 10px 40px rgba(0,0,0,.06);}
+  header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;border-bottom:2px solid #1b1710;padding-bottom:16px;margin-bottom:8px;}
+  h1{font-size:22px;margin:0;}
+  .who{color:#6b6350;font-size:13px;margin-top:4px;}
+  .warn{background:#fff4e4;border:1px solid #ecc97f;color:#6a4a07;border-radius:10px;padding:11px 14px;font-size:13px;margin:16px 0 4px;}
+  section{margin-top:26px;}
+  h2{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .cnt{background:#eee8d8;border-radius:99px;font-size:11px;padding:2px 9px;color:#6b6350;font-weight:600;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th{text-align:left;color:#6b6350;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #d9d2bd;padding:6px 8px;}
+  td{border-bottom:1px solid #eee9da;padding:8px;vertical-align:top;word-break:break-word;white-space:pre-wrap;}
+  .empty{color:#8a8168;font-size:13px;font-style:italic;}
+  footer{margin-top:30px;padding-top:12px;border-top:1px solid #e3ddcd;color:#8a8168;font-size:11.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;}
+  @media print{body{background:#fff;padding:0;}main{border:none;box-shadow:none;padding:10px;}}
+</style></head><body><main>
+<header><div><h1>Ahad Co — Personal Data Backup</h1><div class="who">Account: <b>${esc(u.username)}</b> (${esc(u.email)}) · Member since ${esc(dt(u.created_at))}</div></div><div class="who">Exported ${esc(dt(data.exported_at))}</div></header>
+<div class="warn"><b>Keep this file private.</b> It contains your unencrypted passwords and secrets. Store it somewhere safe and delete it after use.</div>
+${parts}
+<footer><span>Generated by Ahad Co</span><span>Do not email or upload this file anywhere you wouldn't write your passwords.</span></footer>
+</main></body></html>`;
+}
+
+async function doExportHTML() {
   try {
-    const data = await api("/export-data", "GET", null, true);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ahad-co-export-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast("Data exported!", "success");
+    const data = await _fetchExport();
+    _downloadBlob(new Blob([buildBackupHTML(data)], { type: "text/html;charset=utf-8" }), _backupName("html"));
+    toast("Readable backup downloaded. Keep it safe.", "success");
+    closeModal("exportModal");
+    logEvent("success", "Backup downloaded", "Readable HTML export");
   } catch (err) { toast(err.message, "error"); }
+}
+async function doExportJSON() {
+  try {
+    const data = await _fetchExport();
+    _downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), _backupName("json"));
+    toast("Raw JSON downloaded.", "success");
+    closeModal("exportModal");
+    logEvent("success", "Backup downloaded", "Raw JSON export");
+  } catch (err) { toast(err.message, "error"); }
+}
+function doExportEncrypted() {
+  const row = document.getElementById("expPwRow");
+  const nowHidden = row.classList.toggle("hidden");
+  if (!nowHidden) document.getElementById("expPw").focus();
+}
+/* AES-256-GCM encrypted backup, password set at download time.
+   Envelope: {format, v, kdf, iter, salt, iv, data} — decryptable anywhere. */
+async function confirmExportEncrypted() {
+  const pw = document.getElementById("expPw").value;
+  if (pw.length < 8) { toast("Backup password must be at least 8 characters", "error"); return; }
+  try {
+    const data = await _fetchExport();
+    const enc = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", hash: "SHA-256", salt, iterations: 150000 },
+      keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+    const plain = enc.encode(JSON.stringify(data, null, 2));
+    const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+    const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const envelope = {
+      format: "ahad-backup-encrypted", v: 1,
+      kdf: "PBKDF2-SHA256-150000", cipher: "AES-256-GCM",
+      salt: b64(salt), iv: b64(iv), data: b64(cipherBuf),
+      exported_at: data.exported_at,
+    };
+    _downloadBlob(new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" }), _backupName("ahadbackup"));
+    toast("Encrypted backup downloaded.", "success");
+    closeModal("exportModal");
+    logEvent("success", "Backup downloaded", "Encrypted export (AES-256)");
+  } catch (err) { toast(err.message || "Encryption failed", "error"); }
 }
 
 async function deleteAccount() {
@@ -2044,45 +2184,277 @@ async function deleteAccount() {
   } catch (err) { toast(err.message, "error"); }
 }
 
-async function setup2FA() {
-  const enable = confirm("Enable 2-Factor Authentication?\n\nYou'll need an authenticator app like Google Authenticator or Authy.");
-  if (!enable) return;
+/* ==================== 2FA — GUIDED SETUP WIZARD + MANAGE ==================== */
+let _tfa = { secret: "", qr: "", codes: [] };
+
+function _tfaSetStep(n) {
+  document.querySelectorAll("#tfaSteps .ah-dot").forEach(d => {
+    d.classList.toggle("on", +d.dataset.s <= n);
+  });
+}
+function _tfaStepsVisible(v) { document.getElementById("tfaSteps").style.display = v ? "" : "none"; }
+function _tfaBody(html) { document.getElementById("tfaBody").innerHTML = html; }
+
+async function manage2FA() {
   try {
-    const data = await api("/2fa/setup", "POST", { enable: true }, true);
-    const html = `
-      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:5000;display:flex;align-items:center;justify-content:center;padding:20px;" id="twofaOverlay">
-        <div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px;max-width:420px;width:100%;text-align:center;">
-          <h3 style="margin-bottom:16px;">Set up two-factor auth</h3>
-          <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;">Scan this QR code with your authenticator app:</p>
-          <img src="${data.qr_code}" alt="QR Code" style="background:white;padding:12px;border-radius:12px;max-width:250px;">
-          <p style="margin-top:16px;font-size:13px;color:#94a3b8;">Or enter this secret manually:<br><code style="background:#0f172a;padding:6px 12px;border-radius:6px;color:#22d3ee;font-size:14px;word-break:break-all;display:inline-block;margin-top:6px;">${data.secret}</code></p>
-          <p style="color:#f59e0b;font-size:12px;margin-top:12px;">Save these backup codes somewhere safe:</p>
-          <div style="background:#0f172a;padding:12px;border-radius:8px;margin:8px 0;font-family:monospace;font-size:12px;color:#f8fafc;display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:150px;overflow-y:auto;">
-            ${(data.backup_codes || []).map(c => `<div>${c}</div>`).join("")}
-          </div>
-          <div style="margin-top:16px;display:flex;gap:8px;">
-            <input type="text" id="twofaCode" placeholder="Enter 6-digit code" maxlength="6" style="flex:1;padding:12px;background:#334155;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:white;font-size:16px;text-align:center;letter-spacing:4px;" autofocus>
-            <button id="twofaVerifyBtn" style="padding:12px 20px;background:linear-gradient(135deg,#6366f1,#22d3ee);border:none;border-radius:10px;color:white;font-weight:600;cursor:pointer;">Verify</button>
-          </div>
-          <button onclick="document.getElementById('twofaOverlay').remove()" style="margin-top:12px;background:transparent;border:1px solid rgba(255,255,255,0.2);color:#94a3b8;padding:10px 24px;border-radius:10px;cursor:pointer;">Cancel</button>
-        </div>
-      </div>`;
-    document.body.insertAdjacentHTML("beforeend", html);
-    const codeInput = document.getElementById("twofaCode");
-    codeInput.focus();
-    const verify = async () => {
-      const code = codeInput.value.trim();
-      if (code.length !== 6) { toast("Enter 6-digit code", "error"); return; }
-      try {
-        await api("/2fa/verify-setup", "POST", { code }, true);
-        toast("2FA enabled successfully!", "success");
-        document.getElementById("twofaOverlay").remove();
-      } catch (err) { toast(err.message, "error"); }
-    };
-    document.getElementById("twofaVerifyBtn").onclick = verify;
-    codeInput.addEventListener("keydown", e => { if (e.key === "Enter") verify(); });
+    const st = await api("/2fa/status", "GET", null, true);
+    openModal("tfaModal");
+    if (st.enabled) _tfaShowManage(st); else _tfaShowStep1();
   } catch (err) { toast(err.message, "error"); }
 }
+
+/* ---- STEP 1: what 2FA is ---- */
+function _tfaShowStep1() {
+  _tfaStepsVisible(true); _tfaSetStep(1);
+  document.getElementById("tfaTitle").textContent = "Set up two-factor authentication";
+  _tfaBody(`
+    <div class="tfa-hero">${ic("shield")}</div>
+    <p class="tfa-p">Two-factor authentication asks for a <b>6-digit code</b> from an authenticator app
+    (Google Authenticator, Authy…) every time you sign in — so a stolen password alone can't open your vault.</p>
+    <button class="btn-primary block" onclick="_tfaStartSetup()">Get started</button>`);
+}
+
+/* ---- STEP 2: QR + manual key ---- */
+async function _tfaStartSetup() {
+  try {
+    const data = await api("/2fa/setup", "POST", { enable: true }, true);
+    _tfa = { secret: data.secret, qr: data.qr_code, codes: [] };
+    _tfaSetStep(2);
+    _tfaBody(`
+      <p class="tfa-p"><b>1.</b> Scan this QR code with your authenticator app:</p>
+      <div class="tfa-qr"><img src="${data.qr_code}" alt="Authenticator QR code"></div>
+      <p class="tfa-p"><b>Can't scan?</b> Enter this key in the app by hand:</p>
+      <div class="tfa-manual"><code>${data.secret}</code>
+        <button class="vault-btn" onclick="navigator.clipboard.writeText('${data.secret}').then(()=>toast('Secret key copied','success'))">${ic("copy")} Copy</button>
+      </div>
+      <button class="btn-primary block" onclick="_tfaShowVerify()">Next — verify code</button>`);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+/* ---- STEP 3: confirm a live code (segmented boxes, like the auth screens) ---- */
+function _tfaShowVerify() {
+  _tfaSetStep(3);
+  _tfaBody(`
+    <p class="tfa-p"><b>2.</b> Enter the <b>6-digit code</b> now showing in your authenticator app:</p>
+    <div class="otp-boxes tfa-otp" id="tfaOtpBoxes">
+      <input type="text" maxlength="1" inputmode="numeric"><input type="text" maxlength="1" inputmode="numeric"><input type="text" maxlength="1" inputmode="numeric"><input type="text" maxlength="1" inputmode="numeric"><input type="text" maxlength="1" inputmode="numeric"><input type="text" maxlength="1" inputmode="numeric">
+    </div>
+    <p class="tfa-err" id="tfaErr"></p>
+    <button class="btn-primary block" id="tfaVerifyBtn" onclick="_tfaVerify()">Verify &amp; enable</button>`);
+  const boxes = document.querySelectorAll("#tfaOtpBoxes input");
+  if (boxes[0]) boxes[0].focus();
+  setupOtpBoxes("tfaOtpBoxes", _tfaVerify);
+}
+async function _tfaVerify() {
+  const code = getOtpValue("tfaOtpBoxes");
+  if (code.length !== 6) { toast("Enter the full 6-digit code", "error"); return; }
+  const errEl = document.getElementById("tfaErr");
+  try {
+    const btn = document.getElementById("tfaVerifyBtn"); if (btn) { btn.disabled = true; btn.textContent = "Verifying…"; }
+    const r = await api("/2fa/verify-setup", "POST", { code }, true);
+    _tfa.codes = r.backup_codes || [];
+    _tfaShowBackupCodes(true);
+    refreshSecurityPanel();
+  } catch (err) {
+    if (errEl) { errEl.textContent = err.message; }
+    document.getElementById("tfaOtpBoxes").classList.add("otp-err");
+    setTimeout(() => document.getElementById("tfaOtpBoxes").classList.remove("otp-err"), 400);
+    clearOtpBoxes("tfaOtpBoxes");
+    const boxes = document.querySelectorAll("#tfaOtpBoxes input"); if (boxes[0]) boxes[0].focus();
+    const btn = document.getElementById("tfaVerifyBtn"); if (btn) { btn.disabled = false; btn.textContent = "Verify & enable"; }
+  }
+}
+
+/* ---- STEP 4: single-use backup codes ---- */
+function _tfaShowBackupCodes(freshlyEnabled) {
+  _tfaSetStep(4);
+  document.getElementById("tfaTitle").textContent = freshlyEnabled ? "2FA is on — save your backup codes" : "New backup codes";
+  const codes = _tfa.codes;
+  _tfaBody(`
+    ${freshlyEnabled ? `<p class="tfa-ok">${ic("check")} Two-factor authentication enabled.</p>` : ""}
+    <p class="tfa-p">Save these <b>${codes.length} backup codes</b> somewhere safe — <b>each works once</b> if you lose access to your authenticator app.</p>
+    <div class="bc-grid">${codes.map(c => `<code>${c}</code>`).join("")}</div>
+    <div class="bc-actions">
+      <button class="vault-btn" onclick="_tfaDownloadCodes()">${ic("download")} Download codes</button>
+      <button class="vault-btn" onclick="navigator.clipboard.writeText(_tfa.codes.join('\\n')).then(()=>toast('All codes copied','success'))">${ic("copy")} Copy all</button>
+    </div>
+    <label class="bc-confirm"><input type="checkbox" id="tfaSavedChk"> I've saved these codes somewhere safe</label>
+    <button class="btn-primary block" id="tfaDoneBtn" disabled onclick="closeModal('tfaModal');refreshSecurityPanel()">Done</button>`);
+  const chk = document.getElementById("tfaSavedChk");
+  const done = document.getElementById("tfaDoneBtn");
+  chk.addEventListener("change", () => { done.disabled = !chk.checked; });
+}
+function _tfaDownloadCodes() {
+  const txt = "Ahad Co — 2FA backup codes\nSave these somewhere safe. Each code works ONCE.\n\n" + _tfa.codes.join("\n") + "\n";
+  _downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }),
+    `ahadco-backup-codes-${new Date().toISOString().split("T")[0]}.txt`);
+}
+
+/* ---- MANAGE VIEW (when already enabled) ---- */
+function _tfaShowManage(st) {
+  _tfaStepsVisible(false);
+  document.getElementById("tfaTitle").textContent = "Two-factor authentication";
+  _tfaBody(`
+    <div class="tfa-status">
+      <span class="chip on">Enabled</span>
+      <span class="tfa-meta">${st.backup_codes_count} backup code${st.backup_codes_count === 1 ? "" : "s"} left</span>
+    </div>
+    <div class="tfa-man-block">
+      <h4>Regenerate backup codes</h4>
+      <p>Old codes stop working. Confirm with your password + a current authenticator code.</p>
+      <button class="btn-secondary block" onclick="_tfaMiniForm('regen')">Regenerate</button>
+      <div class="tfa-mini hidden" id="tfaMiniRegen">
+        <input type="password" id="regen_pw" class="input-text" placeholder="Password" autocomplete="current-password">
+        <input type="text" id="regen_code" class="input-text" placeholder="6-digit authenticator code" inputmode="numeric" maxlength="6">
+        <button class="btn-primary block" onclick="_tfaRegen()">Confirm &amp; regenerate</button>
+      </div>
+    </div>
+    <div class="tfa-man-block danger-lite">
+      <h4>Disable two-factor authentication</h4>
+      <p>Your account will be protected by password only.</p>
+      <button class="btn-ghost block tfa-dis-btn" onclick="_tfaMiniForm('disable')">Disable 2FA</button>
+      <div class="tfa-mini hidden" id="tfaMiniDisable">
+        <input type="password" id="dis_pw" class="input-text" placeholder="Password" autocomplete="current-password">
+        <input type="text" id="dis_code" class="input-text" placeholder="6-digit or backup code" inputmode="text">
+        <button class="btn-danger block" onclick="_tfaDisable()">Confirm disable</button>
+      </div>
+    </div>`);
+}
+function _tfaMiniForm(which) {
+  const el = document.getElementById(which === "regen" ? "tfaMiniRegen" : "tfaMiniDisable");
+  if (el) el.classList.toggle("hidden");
+}
+async function _tfaRegen() {
+  const password = document.getElementById("regen_pw").value;
+  const code = document.getElementById("regen_code").value.trim();
+  if (!password || !code) { toast("Enter your password and code", "error"); return; }
+  try {
+    const r = await api("/2fa/backup-codes", "POST", { password, code }, true);
+    _tfa.codes = r.backup_codes || [];
+    _tfaStepsVisible(true);
+    _tfaShowBackupCodes(false);
+  } catch (err) { toast(err.message, "error"); }
+}
+async function _tfaDisable() {
+  const password = document.getElementById("dis_pw").value;
+  const code = document.getElementById("dis_code").value.trim();
+  if (!password || !code) { toast("Enter your password and code", "error"); return; }
+  try {
+    await api("/2fa/disable", "POST", { password, code }, true);
+    toast("Two-factor authentication disabled", "success");
+    closeModal("tfaModal");
+    refreshSecurityPanel();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== SETTINGS: CHANGE PASSWORD ==================== */
+async function openChangePassword() {
+  ["cp_current", "cp_new", "cp_confirm", "cp_totp"].forEach(id => { const e = document.getElementById(id); if (e) e.value = ""; });
+  const lbl = document.getElementById("strengthLabel4"), fill = document.getElementById("strengthFill4");
+  if (lbl) lbl.textContent = ""; if (fill) fill.style.width = "0";
+  openModal("pwModal");
+  // Show the 2FA field only when the account actually has 2FA on
+  try {
+    const st = await api("/2fa/status", "GET", null, true);
+    document.getElementById("cpTotpRow").classList.toggle("hidden", !st.enabled);
+  } catch (e) {}
+}
+async function submitChangePassword() {
+  const current = document.getElementById("cp_current").value;
+  const next = document.getElementById("cp_new").value;
+  const conf = document.getElementById("cp_confirm").value;
+  const totp = document.getElementById("cp_totp").value.trim();
+  if (!current || !next) { toast("Fill in your current and new password", "error"); return; }
+  if (next.length < 6) { toast("New password must be at least 6 characters", "error"); return; }
+  if (next !== conf) { toast("New passwords don't match", "error"); return; }
+  const btn = document.getElementById("cpSubmit");
+  if (btn) { btn.disabled = true; btn.textContent = "Updating…"; }
+  try {
+    const r = await api("/account/change-password", "POST", {
+      current_password: current, new_password: next, totp_code: totp || null,
+    }, true);
+    logEvent("success", "Password changed", `${r.other_sessions_revoked} other device(s) signed out`);
+    document.getElementById("pwBody").innerHTML = `
+      <div class="pw-done">
+        <div class="success-ring">✓</div>
+        <h3>Password updated</h3>
+        <p class="auth-hint">For your security, <b>all other devices have been signed out</b>${r.other_sessions_revoked ? ` (${r.other_sessions_revoked} session${r.other_sessions_revoked === 1 ? "" : "s"})` : ""}.</p>
+        <button class="btn-primary block" onclick="closeModal('pwModal')">Done</button>
+      </div>`;
+    refreshSecurityPanel();
+  } catch (err) {
+    toast(err.message, "error");
+    if (btn) { btn.disabled = false; btn.textContent = "Update password"; }
+  }
+}
+
+/* ==================== SETTINGS: ACTIVE SESSIONS ==================== */
+function _sessDevice(ua) {
+  const s = (ua || "").toLowerCase();
+  const isMobile = /mobile|android|iphone|ipod/.test(s);
+  const icon = isMobile ? "phone" : "server";
+  let os = "Device";
+  if (/windows/.test(s)) os = "Windows";
+  else if (/android/.test(s)) os = "Android";
+  else if (/iphone|ipad|ios/.test(s)) os = "iPhone / iPad";
+  else if (/mac os|macintosh/.test(s)) os = "Mac";
+  else if (/linux/.test(s)) os = "Linux";
+  let br = "";
+  if (/edg\//.test(s)) br = "Edge";
+  else if (/chrome\//.test(s)) br = "Chrome";
+  else if (/firefox\//.test(s)) br = "Firefox";
+  else if (/safari\//.test(s) && !/chrome/.test(s)) br = "Safari";
+  return { icon, label: br ? `${br} on ${os}` : os };
+}
+async function loadSessionsList() {
+  const box = document.getElementById("sessList");
+  if (!box) return;
+  try {
+    const data = await api("/sessions", "GET", null, true);
+    const rows = data.sessions || [];
+    if (!rows.length) { box.innerHTML = `<div class="muted" style="font-size:13px">No active sessions.</div>`; return; }
+    box.innerHTML = rows.map(r => {
+      const d = _sessDevice(r.device_info);
+      const seen = r.last_seen ? new Date(r.last_seen).toLocaleString() : "";
+      return `<div class="sess-row">
+        <span class="sess-ic">${ic(d.icon)}</span>
+        <div class="sess-tx">
+          <b>${escapeHtml(d.label)}${r.is_current ? ' <span class="chip on sm">This device</span>' : ""}</b>
+          <small>${escapeHtml(r.ip_address || "unknown ip")} · last active ${escapeHtml(seen)}</small>
+        </div>
+        ${r.is_current ? "" : `<button class="vault-btn danger" onclick="revokeSession(${r.id})" title="Sign this device out">${ic("log-out")} Revoke</button>`}
+      </div>`;
+    }).join("");
+  } catch (err) { box.innerHTML = `<div class="muted" style="font-size:13px">Couldn't load sessions.</div>`; }
+}
+async function revokeSession(id) {
+  try {
+    await api("/sessions/revoke", "POST", { session_id: id }, true);
+    toast("Device signed out", "success");
+    logEvent("warning", "Session revoked", "A device was signed out from Settings");
+    loadSessionsList();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+/* ==================== SECURITY PANEL REFRESH ==================== */
+async function refreshSecurityPanel() {
+  try {
+    const st = await api("/2fa/status", "GET", null, true);
+    const chip = document.getElementById("tfaChip");
+    if (chip) {
+      chip.textContent = st.enabled ? "Enabled" : "Disabled";
+      chip.className = "chip" + (st.enabled ? " on" : "");
+    }
+    const meta = document.getElementById("tfaMeta");
+    if (meta) meta.textContent = st.enabled ? `Backup codes: ${st.backup_codes_count} left` : "Adds a second lock on top of your password.";
+  } catch (e) {}
+  const pw = document.getElementById("pwChangedAt");
+  if (pw && _lastProfile) {
+    const when = _lastProfile.password_changed_at || _lastProfile.created_at;
+    if (when) pw.textContent = "Last changed: " + new Date(when).toLocaleDateString();
+  }
+}
+let _lastProfile = null;
 
 /* ==================== STATS ==================== */
 async function loadStats() {
@@ -2284,11 +2656,14 @@ document.addEventListener("DOMContentLoaded", () => {
     checkStrength(e.target.value, document.getElementById("strengthFill3"), document.getElementById("strengthLabel3"));
   });
 
-  // 2FA + Delete account wiring
-  const btn2FA = document.getElementById("btn2FA");
-  if (btn2FA) btn2FA.addEventListener("click", setup2FA);
+  // Delete account wiring (2FA button uses inline onclick="manage2FA()")
   document.querySelectorAll(".btn-danger").forEach(b => {
     if (b.textContent.includes("Delete Account")) b.addEventListener("click", e => { e.preventDefault(); deleteAccount(); });
+  });
+  // Live strength meter inside the change-password modal
+  const pw4 = document.getElementById("cp_new");
+  if (pw4) pw4.addEventListener("input", e => {
+    checkStrength(e.target.value, document.getElementById("strengthFill4"), document.getElementById("strengthLabel4"));
   });
 
   // Marketing mobile nav (burger -> sheet)
