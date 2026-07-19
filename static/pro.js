@@ -623,6 +623,7 @@ function initPasswordEyes() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "pw-eye";
+    btn.tabIndex = -1;  // keep Tab / mobile "next field" flowing username→email→password
     btn.setAttribute("aria-label", "Show or hide password");
     btn.innerHTML = EYE;
     btn.addEventListener("click", () => {
