@@ -36,6 +36,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger("ahad-co-db")
@@ -294,6 +295,22 @@ class _Connection:
 # ---------------------------------------------------------------------------
 # PostgreSQL connection pool
 # ---------------------------------------------------------------------------
+#
+# WHY THE EXTRA MACHINERY BELOW (read: the "site hangs after a while" fix):
+#   Render's free instances sleep after ~15 min idle, and Supabase's pooler —
+#   plus every NAT between them — silently drops idle TCP sessions. A pooled
+#   connection can therefore be dead WITHOUT psycopg2 knowing, and the first
+#   query on it hangs for minutes (default TCP timeouts are ~2 HOURS).
+#   Three defences, layered:
+#     1. TCP keepalives + connect_timeout on every new connection, so a dead
+#        socket is detected in ~80s instead of ~2h, and connects cap at 10s.
+#     2. After a long idle gap the instance almost surely slept: rebuild the
+#        whole pool BEFORE handing anything out — fresh connects are ~200ms.
+#     3. Probe every checkout with SELECT 1; discard-and-retry dead conns.
+_POOL_IDLE_RESET_S = 90.0   # more silence than this => do not trust the pool
+_last_db_activity = 0.0     # monotonic timestamp of the last healthy checkout
+
+
 def _get_pool():
     global _pool
     if _pool is not None:
@@ -305,7 +322,16 @@ def _get_pool():
             # sslmode can also live inside DATABASE_URL; only inject a default
             # when the user hasn't already specified one.
             dsn = _DATABASE_URL
-            connect_kwargs = {}
+            connect_kwargs = {
+                # libpq knobs (psycopg2 passes these straight through)
+                "connect_timeout": 10,
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 5,
+            }
+            if "application_name" not in dsn:
+                connect_kwargs["application_name"] = "ahad-co"
             if "sslmode" not in _DATABASE_URL and PG_SSLMODE:
                 connect_kwargs["sslmode"] = PG_SSLMODE
             logger.info("Creating PostgreSQL connection pool (maxconn=8)")
@@ -317,6 +343,56 @@ def _get_pool():
                 **connect_kwargs,
             )
     return _pool
+
+
+def _reset_pool():
+    """Kill every pooled connection; the next _get_pool() builds a fresh pool."""
+    global _pool
+    with _pool_lock:
+        old, _pool = _pool, None
+    if old is not None:
+        try:
+            old.closeall()
+        except Exception:
+            pass
+
+
+def _checkout_pg():
+    """Take a LIVE connection out of the pool (see defences at the top)."""
+    global _last_db_activity
+    now = time.monotonic()
+    if _last_db_activity and (now - _last_db_activity) > _POOL_IDLE_RESET_S:
+        # Defence 2 — we almost certainly slept; don't even bother probing
+        # connections that were frozen alongside the process.
+        logger.info("PostgreSQL pool idle %.0fs — rebuilding (post-sleep safety)",
+                    now - _last_db_activity)
+        _reset_pool()
+    pool = _get_pool()
+    for _ in range(3):
+        raw = pool.getconn()
+        try:
+            # Defence 3 — cheap liveness probe (round trip is ~ms, a dead
+            # conn costs a hang if we skip this)
+            cur = raw.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
+            _last_db_activity = time.monotonic()
+            return raw
+        except Exception as exc:
+            logger.warning("Discarding dead pooled PostgreSQL connection: %s",
+                           type(exc).__name__)
+            try:
+                pool.putconn(raw, close=True)   # close & drop from the pool
+            except Exception:
+                try:
+                    raw.close()
+                except Exception:
+                    pass
+    # Everything we were offered was dead — nuke the pool and take a fresh one.
+    _reset_pool()
+    raw = _get_pool().getconn()
+    _last_db_activity = time.monotonic()
+    return raw
 
 
 def _return_to_pool(conn):
@@ -335,9 +411,7 @@ def _return_to_pool(conn):
 # ---------------------------------------------------------------------------
 def get_db_connection() -> _Connection:
     if DIALECT == "postgres":
-        pool = _get_pool()
-        raw = pool.getconn()
-        return _Connection(raw)
+        return _Connection(_checkout_pg())
 
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
