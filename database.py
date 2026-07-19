@@ -578,6 +578,22 @@ _SCHEMA_TABLES = [
     )
     """,
     """
+    -- Temporary WiFi share links: a guest opens /w/{token} and sees ONLY the
+    -- join QR (no login needed). Dies after 1 hour OR after the first view.
+    CREATE TABLE IF NOT EXISTS wifi_shares (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        user_id INTEGER NOT NULL,
+        wifi_id INTEGER,
+        ssid TEXT NOT NULL,
+        qr_payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        viewed_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS user_servers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,

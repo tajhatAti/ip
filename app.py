@@ -2285,6 +2285,105 @@ def delete_recovery(payload: GenericDelete, authorization: Optional[str] = Heade
 
 
 # ================================
+# WIFI GUEST SHARE LINKS — /w/{token} shows ONLY the join QR
+# ================================
+WIFI_SHARE_TTL_MINUTES = 60
+
+
+def _wifi_share_page(title: str, body_html: str) -> str:
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title><style>
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#faf9f6;
+font-family:Georgia,'Times New Roman',serif;color:#141310}}
+.card{{max-width:360px;margin:20px;padding:32px 26px;text-align:center;background:#fff;
+border:1px solid #e4e0d5;border-top:3px solid #0f0e0c;box-shadow:0 18px 40px -26px rgba(20,19,16,.28)}}
+.card img{{width:220px;height:220px;border:1px solid #e4e0d5;border-radius:8px}}
+h1{{font-size:20px;margin:0 0 8px;font-weight:600}}
+p{{font-size:13.5px;line-height:1.6;color:#5c584e;margin:6px 0}}
+.tag{{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+color:#8a8474;border:1px solid #e4e0d5;border-radius:999px;padding:3px 10px;margin-top:12px}}
+</style></head><body><div class="card">{body_html}</div></body></html>"""
+
+
+@app.post("/wifi/{wifi_id}/share")
+def share_wifi(wifi_id: int, request: Request, authorization: Optional[str] = Header(None)):
+    """Create a one-hour / first-view guest link that shows only the join QR."""
+    user, _ = get_current_user_and_session(authorization)
+    rate_limit(f"{client_ip(request)}:wifi-share")
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM user_wifi WHERE id = ? AND user_id = ?", (wifi_id, user["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="WiFi not found.")
+        w = dict(row)
+        qr_payload = f"WIFI:T:{w.get('security') or 'WPA'};S:{w.get('ssid') or ''};P:{w.get('password') or ''};;"
+        token = secrets.token_urlsafe(18)
+        now = now_utc()
+        # Clear out ancient links of this user while we're here (housekeeping).
+        conn.execute("DELETE FROM wifi_shares WHERE user_id = ? AND expires_at < ?",
+                     (user["id"], (now - timedelta(days=2)).isoformat()))
+        conn.execute(
+            "INSERT INTO wifi_shares (token, user_id, wifi_id, ssid, qr_payload, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (token, user["id"], wifi_id, w.get("ssid") or "", qr_payload,
+             now.isoformat(), (now + timedelta(minutes=WIFI_SHARE_TTL_MINUTES)).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    base = str(request.base_url).rstrip("/")
+    return {"url": f"{base}/w/{token}", "expires_in": WIFI_SHARE_TTL_MINUTES * 60,
+            "note": "Shows only the QR. Dies after 1 hour or the first view."}
+
+
+@app.get("/w/{token}")
+def view_wifi_share(token: str):
+    """Public guest page: join QR for a shared WiFi, no login required.
+
+    First successful view burns the link (also dies at the 1-hour mark)."""
+    from fastapi.responses import HTMLResponse
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM wifi_shares WHERE token = ?", (token,)).fetchone()
+        if not row:
+            return HTMLResponse(_wifi_share_page("Link invalid",
+                "<h1>This link is invalid</h1><p>It never existed or was revoked.</p>"), status_code=404)
+        share = dict(row)
+        now = now_utc_str()
+        if share["expires_at"] < now:
+            return HTMLResponse(_wifi_share_page("Link expired",
+                "<h1>This link has expired</h1><p>WiFi guest links live for one hour only. Ask for a fresh one.</p>"), status_code=410)
+        if share.get("viewed_at"):
+            return HTMLResponse(_wifi_share_page("Link already used",
+                "<h1>This link was already opened</h1><p>For your host's security each WiFi guest link works exactly once. Ask for a fresh one.</p>"), status_code=410)
+
+        # Burn-on-read: mark viewed BEFORE serving so a refresh can't replay it.
+        conn.execute("UPDATE wifi_shares SET viewed_at = ? WHERE token = ? AND viewed_at IS NULL", (now, token))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Render the QR inline (single request — the link is already one-time).
+    qr = qrcode.QRCode(version=1, box_size=9, border=2)
+    qr.add_data(share["qr_payload"])
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    qr_b64 = base64.b64encode(buffer.getvalue()).decode()
+    import html as _html
+    ssid = _html.escape(share["ssid"])
+    return HTMLResponse(_wifi_share_page("WiFi Guest Access",
+        f'<h1>WiFi Guest Access</h1><img src="data:image/png;base64,{qr_b64}" alt="WiFi QR code">'
+        f"<p>Point your phone camera at the code to join <b>{ssid}</b> instantly — no typing needed.</p>"
+        f'<span class="tag">one-time link · now used</span>'))
+
+
+# ================================
 # QR CODE GENERATOR (for WiFi / anything)
 # ================================
 @app.get("/qr")
@@ -2578,6 +2677,26 @@ def _runner_http(method: str, path: str, json_body=None):
         raise HTTPException(status_code=504, detail="Job service took too long to respond.")
 
 
+def _job_web_fields(info: dict) -> dict:
+    """Translate a runner job view into frontend web fields (public URL etc.).
+
+    The proxy lives on the RUNNER service, so the public URL is simply the
+    runner's own base URL + /live/{slug}/."""
+    slug = (info or {}).get("web_slug")
+    runner_url = os.getenv("RUNNER_SERVICE_URL", "").strip().rstrip("/")
+    if not slug or not runner_url:
+        return {}
+    out = {
+        "web": bool(info.get("web")),
+        "web_public": bool(info.get("web_public", True)),
+        "web_url": f"{runner_url}/live/{slug}/",
+    }
+    key = info.get("access_key")
+    if not out["web_public"] and key:
+        out["web_private_url"] = out["web_url"] + "?key=" + key
+    return out
+
+
 def _get_own_job(job_id: int, user: dict) -> dict:
     """Fetch a job row owned by this user or 404."""
     conn = get_db_connection()
@@ -2636,6 +2755,7 @@ def create_job(payload: JobCreateRequest, request: Request, authorization: Optio
         )
         conn.commit()
         info["job_db_id"] = cursor.lastrowid
+        info.update(_job_web_fields(info))  # web / web_url (web often False seconds after birth)
         return info
     finally:
         conn.close()
@@ -2668,6 +2788,7 @@ def list_jobs(authorization: Optional[str] = Header(None)):
         if rid and rid in live:
             info = live[rid]
             r.update({"status": info["status"], "uptime_s": info.get("uptime_s", 0), "restarts": info.get("restarts", 0)})
+            r.update(_job_web_fields(info))                # web / web_url / access
         else:
             r.update({"status": "offline", "uptime_s": 0, "restarts": 0})
         r.pop("code", None)  # never ship stored code back in list payloads
@@ -2790,6 +2911,30 @@ def restart_job(job_id: int, request: Request, authorization: Optional[str] = He
         conn.commit()
     finally:
         conn.close()
+    info["job_db_id"] = job_id
+    info.update(_job_web_fields(info))
+    return info
+
+
+class JobAccessToggle(BaseModel):
+    public: bool = True
+
+
+@app.post("/api/jobs/{job_id}/access")
+def toggle_job_access(job_id: int, payload: JobAccessToggle, authorization: Optional[str] = Header(None)):
+    """Public ⇄ Private toggle for a job's live web URL."""
+    user, _ = get_current_user_and_session(authorization)
+    row = _get_own_job(job_id, user)
+    rid = row.get("runner_job_id")
+    if not rid:
+        raise HTTPException(status_code=409, detail="Job is not up on the runner — press Restart first.")
+    resp = _runner_http("POST", f"/internal/jobs/{rid}/access", {"public": payload.public})
+    if resp.status_code == 404:
+        raise HTTPException(status_code=409, detail="Runner restarted — press Restart to relaunch, then retry.")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Runner refused the access change.")
+    info = resp.json()
+    info.update(_job_web_fields(info))
     info["job_db_id"] = job_id
     return info
 

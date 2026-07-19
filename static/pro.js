@@ -417,6 +417,9 @@ const _IC_PATHS = {
   user:        '<circle cx="12" cy="8.3" r="3.4"/><path d="M5.5 19.6c1.2-3.3 3.7-5 6.5-5s5.3 1.7 6.5 5"/>',
   save:        '<path d="M5 4.5h11L19.5 8v11.5h-15z"/><path d="M8 4.5v4.5h7V4.5M8 19.5v-6h8v6"/>',
   sparkle:     '<path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.4l-1.9-5.6L4.5 10.9 10.1 9z"/>',
+  external:    '<path d="M14.5 4h5.5v5.5"/><path d="M20 4 11 13"/><path d="M19 13.5V17a2.5 2.5 0 0 1-2.5 2.5h-10A2.5 2.5 0 0 1 4 17V7a2.5 2.5 0 0 1 2.5-2.5H10"/>',
+  share:       '<circle cx="17.5" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/><path d="m8.2 10.8 6.8-4M8.2 13.2l6.8 4"/>',
+  'eye-off':   '<path d="M4.5 4.5l15 15"/><path d="M9.9 5.1A10 10 0 0 1 12 5c5.7 0 9.2 7 9.2 7a16.6 16.6 0 0 1-2.9 3.8M6 7.5A15.9 15.9 0 0 0 2.8 12S6.3 19 12 19a9.4 9.4 0 0 0 4.4-1.1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
 };
 
 function ic(name, cls) {
@@ -825,23 +828,43 @@ async function loadDashboard() {
   showScreen("screen-dashboard");
 }
 
+/* ==================== ADD-NEW FORM TOGGLE (ONE source of truth) ========
+   Old pattern: a click listener on the button PLUS swapping .onclick between
+   show/hide. On many mobile browsers BOTH handlers fire on the same tap —
+   show() then hide() instantly — so the button looked dead after the first
+   use and only a reload revived it.
+   New pattern: exactly ONE listener per button; the open state is READ FROM
+   THE DOM at toggle time (like an updater fn — no stale closure, no ghost
+   handler). The form element itself is the only source of truth. */
+function _clearIds(ids) { (ids || []).forEach(i => { const e = document.getElementById(i); if (e) e.value = ""; }); }
+const _ADD_FORMS = {
+  vault:     { form: "vaultForm",    btn: "btnAddVault",    add: "＋ Add new",      hide: "Hide", clear: () => { _clearIds(["vaultType","vaultLabel","vaultValue"]); editingVaultId = null; } },
+  card:      { form: "cardForm",     btn: "btnAddCard",     add: "＋ Add card",     hide: "Hide", clear: () => { _clearIds(["cardLabel","cardHolder","cardBrand","cardNumber","cardExpiry","cardCvv","cardNote"]); editingCardId = null; } },
+  identity:  { form: "identityForm", btn: "btnAddIdentity", add: "＋ Add ID",       hide: "Hide", clear: () => { _clearIds(["identityType","identityLabel","identityFields"]); editingIdentityId = null; } },
+  contact:   { form: "contactForm",  btn: "btnAddContact",  add: "＋ Add contact",  hide: "Hide", clear: () => { _clearIds(["contactName","contactCompany","contactEmail","contactPhone","contactAddress","contactNote"]); } },
+  wifi:      { form: "wifiForm",     btn: "btnAddWifi",     add: "＋ Add WiFi",     hide: "Hide", clear: () => { _clearIds(["wifiLabel","wifiSsid","wifiPassword","wifiLocation"]); } },
+  server:    { form: "serverForm",   btn: "btnAddServer",   add: "＋ Add server",   hide: "Hide", clear: () => { _clearIds(["serverName","serverHost","serverPort","serverUsername","serverPassword","serverNote"]); } },
+  recovery:  { form: "recoveryForm", btn: "btnAddRecovery", add: "＋ Add phrase",   hide: "Hide", clear: () => { _clearIds(["recoveryLabel","recoveryWords"]); } },
+  note:      { form: "noteForm",     btn: "btnAddNote",     add: "＋ New note",     hide: "Hide", clear: () => { _clearIds(["noteTitle","noteContent"]); editingNoteId = null; } },
+  bookmark:  { form: "bookmarkForm", btn: "btnAddBookmark", add: "＋ Add bookmark", hide: "Hide", clear: () => { _clearIds(["bookmarkTitle","bookmarkUrl","bookmarkDesc"]); editingBookmarkId = null; } },
+};
+function _setAddForm(key, open) {
+  const c = _ADD_FORMS[key];
+  if (!c) return;
+  const f = document.getElementById(c.form), b = document.getElementById(c.btn);
+  if (!f || !b) return;
+  if (open === undefined) open = f.classList.contains("hidden");  // read CURRENT state, then flip
+  f.classList.toggle("hidden", !open);
+  b.textContent = open ? c.hide : c.add;
+  if (!open && c.clear) c.clear();
+}
+
 /* ==================== VAULT ==================== */
 /* Null-safe smooth scroll — never crash if an element isn't mounted yet. */
 function _scrollToEl(el) { if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
-function showVaultForm() {
-  document.getElementById("vaultForm").classList.remove("hidden");
-  document.getElementById("btnAddVault").textContent = "Hide form";
-  document.getElementById("btnAddVault").onclick = hideVaultForm;
-}
+function showVaultForm() { _setAddForm("vault", true); }
 
-function hideVaultForm() {
-  document.getElementById("vaultForm").classList.add("hidden");
-  document.getElementById("btnAddVault").textContent = "Add New";
-  document.getElementById("btnAddVault").onclick = showVaultForm;
-  document.getElementById("vaultLabel").value = "";
-  document.getElementById("vaultValue").value = "";
-  editingVaultId = null;
-}
+function hideVaultForm() { _setAddForm("vault", false); }
 
 async function saveVault() {
   const type = document.getElementById("vaultType").value;
@@ -897,9 +920,7 @@ function startEditVault(id, type, label, value) {
   document.getElementById("vaultType").value = type;
   document.getElementById("vaultLabel").value = label;
   document.getElementById("vaultValue").value = value;
-  document.getElementById("vaultForm").classList.remove("hidden");
-  document.getElementById("btnAddVault").textContent = "Hide form";
-  document.getElementById("btnAddVault").onclick = hideVaultForm;
+  _setAddForm("vault", true);
   _scrollToEl(document.getElementById("vaultForm"));
 }
 
@@ -914,20 +935,9 @@ function copyVault(value) {
 }
 
 /* ==================== NOTES ==================== */
-function showNoteForm() {
-  document.getElementById("noteForm").classList.remove("hidden");
-  document.getElementById("btnAddNote").textContent = "Hide form";
-  document.getElementById("btnAddNote").onclick = hideNoteForm;
-}
+function showNoteForm() { _setAddForm("note", true); }
 
-function hideNoteForm() {
-  document.getElementById("noteForm").classList.add("hidden");
-  document.getElementById("btnAddNote").textContent = "New Note";
-  document.getElementById("btnAddNote").onclick = showNoteForm;
-  document.getElementById("noteTitle").value = "";
-  document.getElementById("noteContent").value = "";
-  editingNoteId = null;
-}
+function hideNoteForm() { _setAddForm("note", false); }
 
 async function saveNote() {
   const title = document.getElementById("noteTitle").value.trim();
@@ -979,9 +989,7 @@ function startEditNote(id, title, content, color) {
   document.getElementById("noteContent").value = content;
   selectedNoteColor = color || "#6366f1";
   document.querySelectorAll(".color-btn").forEach(b => b.classList.toggle("active", b.dataset.color === selectedNoteColor));
-  document.getElementById("noteForm").classList.remove("hidden");
-  document.getElementById("btnAddNote").textContent = "Hide form";
-  document.getElementById("btnAddNote").onclick = hideNoteForm;
+  _setAddForm("note", true);
   _scrollToEl(document.getElementById("noteForm"));
 }
 
@@ -998,21 +1006,9 @@ async function deleteNote(id) {
 }
 
 /* ==================== BOOKMARKS ==================== */
-function showBookmarkForm() {
-  document.getElementById("bookmarkForm").classList.remove("hidden");
-  document.getElementById("btnAddBookmark").textContent = "Hide form";
-  document.getElementById("btnAddBookmark").onclick = hideBookmarkForm;
-}
+function showBookmarkForm() { _setAddForm("bookmark", true); }
 
-function hideBookmarkForm() {
-  document.getElementById("bookmarkForm").classList.add("hidden");
-  document.getElementById("btnAddBookmark").textContent = "Add Bookmark";
-  document.getElementById("btnAddBookmark").onclick = showBookmarkForm;
-  document.getElementById("bookmarkTitle").value = "";
-  document.getElementById("bookmarkUrl").value = "";
-  document.getElementById("bookmarkDesc").value = "";
-  editingBookmarkId = null;
-}
+function hideBookmarkForm() { _setAddForm("bookmark", false); }
 
 async function saveBookmark() {
   const title = document.getElementById("bookmarkTitle").value.trim();
@@ -1070,9 +1066,7 @@ function startEditBookmark(id, title, url, description) {
   document.getElementById("bookmarkTitle").value = title;
   document.getElementById("bookmarkUrl").value = url;
   document.getElementById("bookmarkDesc").value = description || "";
-  document.getElementById("bookmarkForm").classList.remove("hidden");
-  document.getElementById("btnAddBookmark").textContent = "Hide form";
-  document.getElementById("btnAddBookmark").onclick = hideBookmarkForm;
+  _setAddForm("bookmark", true);
   _scrollToEl(document.getElementById("bookmarkForm"));
 }
 
@@ -1086,20 +1080,8 @@ async function deleteBookmark(id) {
 let editingCardId = null;
 let selectedCardColor = "#6366f1";
 
-function showCardForm() {
-  document.getElementById("cardForm").classList.remove("hidden");
-  document.getElementById("btnAddCard").textContent = "Hide";
-  document.getElementById("btnAddCard").onclick = hideCardForm;
-}
-function hideCardForm() {
-  document.getElementById("cardForm").classList.add("hidden");
-  document.getElementById("btnAddCard").textContent = "＋ Add card";
-  document.getElementById("btnAddCard").onclick = showCardForm;
-  ["cardLabel", "cardHolder", "cardBrand", "cardNumber", "cardExpiry", "cardCvv", "cardNote"].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = "";
-  });
-  editingCardId = null;
-}
+function showCardForm() { _setAddForm("card", true); }
+function hideCardForm() { _setAddForm("card", false); }
 
 function _formatCardNumber(digits) {
   return digits.replace(/(.{4})/g, "$1 ").trim();
@@ -1209,9 +1191,7 @@ async function startEditCard(id) {
     document.getElementById("cardNote").value = c.note || "";
     selectedCardColor = c.color || "#6366f1";
     document.querySelectorAll("#cardForm .color-btn").forEach(b => b.classList.toggle("active", b.dataset.cardColor === selectedCardColor));
-    document.getElementById("cardForm").classList.remove("hidden");
-    document.getElementById("btnAddCard").textContent = "Hide";
-    document.getElementById("btnAddCard").onclick = hideCardForm;
+    _setAddForm("card", true);
     _scrollToEl(document.getElementById("cardForm"));
   } catch (err) { toast(err.message, "error"); }
 }
@@ -1278,8 +1258,8 @@ async function deleteTask(id) {
 
 /* ==================== IDENTITIES ==================== */
 let editingIdentityId = null;
-function showIdentityForm() { document.getElementById("identityForm").classList.remove("hidden"); document.getElementById("btnAddIdentity").onclick = hideIdentityForm; document.getElementById("btnAddIdentity").textContent = "Hide"; }
-function hideIdentityForm() { document.getElementById("identityForm").classList.add("hidden"); document.getElementById("btnAddIdentity").onclick = showIdentityForm; document.getElementById("btnAddIdentity").textContent = "＋ Add ID"; ["identityType","identityLabel","identityFields"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); editingIdentityId = null; }
+function showIdentityForm() { _setAddForm("identity", true); }
+function hideIdentityForm() { _setAddForm("identity", false); }
 
 function _parseIdentityFields(text) {
   const obj = {};
@@ -1330,8 +1310,8 @@ async function deleteIdentity(id) {
 }
 
 /* ==================== CONTACTS ==================== */
-function showContactForm() { document.getElementById("contactForm").classList.remove("hidden"); document.getElementById("btnAddContact").onclick = hideContactForm; document.getElementById("btnAddContact").textContent = "Hide"; }
-function hideContactForm() { document.getElementById("contactForm").classList.add("hidden"); document.getElementById("btnAddContact").onclick = showContactForm; document.getElementById("btnAddContact").textContent = "＋ Add contact"; ["contactName","contactCompany","contactEmail","contactPhone","contactAddress","contactNote"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+function showContactForm() { _setAddForm("contact", true); }
+function hideContactForm() { _setAddForm("contact", false); }
 async function saveContact() {
   const name = document.getElementById("contactName").value.trim();
   if (!name) { toast("Name is required!", "error"); return; }
@@ -1368,8 +1348,8 @@ async function deleteContact(id) {
 }
 
 /* ==================== WIFI ==================== */
-function showWifiForm() { document.getElementById("wifiForm").classList.remove("hidden"); document.getElementById("btnAddWifi").onclick = hideWifiForm; document.getElementById("btnAddWifi").textContent = "Hide"; }
-function hideWifiForm() { document.getElementById("wifiForm").classList.add("hidden"); document.getElementById("btnAddWifi").onclick = showWifiForm; document.getElementById("btnAddWifi").textContent = "＋ Add WiFi"; ["wifiLabel","wifiSsid","wifiPassword","wifiLocation"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+function showWifiForm() { _setAddForm("wifi", true); }
+function hideWifiForm() { _setAddForm("wifi", false); }
 function _wifiString(w) { return "WIFI:T:" + (w.security || "WPA") + ";S:" + (w.ssid || "") + ";P:" + (w.password || "") + ";;"; }
 async function saveWifi() {
   const label = document.getElementById("wifiLabel").value.trim();
@@ -1379,24 +1359,97 @@ async function saveWifi() {
   try { await api("/wifi", "POST", payload, true); toast("WiFi saved!", "success"); hideWifiForm(); await loadWifi(); }
   catch (err) { toast(err.message, "error"); }
 }
+let _wifiCache = [];
+const _WIFI_BADGE = { WPA: "wpa", WPA2: "wpa2", WEP: "wep", OPEN: "open", nopass: "open" };
+
+function _wifiBadge(security) {
+  const raw = (security || "WPA").toUpperCase();
+  const label = raw.includes("WPA2") ? "WPA2" : raw.includes("WPA") ? "WPA" : raw.includes("WEP") ? "WEP" : "Open";
+  const cls = _WIFI_BADGE[label] || "open";
+  return `<span class="wifi-badge ${cls}">${label}</span>`;
+}
+
+function filterWifiList(q) {
+  q = (q || "").trim().toLowerCase();
+  const rows = q
+    ? _wifiCache.filter(w => [w.label, w.ssid, w.location].some(v => (v || "").toLowerCase().includes(q)))
+    : _wifiCache;
+  _renderWifi(rows, q);
+}
+
+function copyWifiPw(id) {
+  const w = _wifiCache.find(x => x.id === id);
+  if (w && w.password) copyText(w.password);
+}
+
+function toggleWifiPw(id) {
+  const el = document.getElementById("wifipw-" + id);
+  if (!el) return;
+  const w = _wifiCache.find(x => x.id === id);
+  if (!w) return;
+  const revealed = el.dataset.revealed === "1";
+  el.textContent = revealed ? "••••••••" : (w.password || "Open network");
+  el.dataset.revealed = revealed ? "0" : "1";
+  const btn = el.parentElement && el.parentElement.querySelector(".wifi-eye");
+  if (btn) btn.innerHTML = ic(revealed ? "eye" : "eye-off");
+}
+
 async function loadWifi() {
   const list = document.getElementById("wifiList");
   if (list) list.innerHTML = `<div class="loading-state"><div class="empty-icon">⏳</div><p>Loading…</p></div>`;
   try {
     const data = await api("/wifi", "GET", null, true);
-    if (!data.wifi || !data.wifi.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("📶","teal")}</div><p>No WiFi networks saved</p><small>Add a network and generate a QR to share</small></div>`; return; }
-    list.innerHTML = data.wifi.map(w => `
-      <div class="vault-item">
-        <div class="vault-info"><div class="vault-icon">${ep("📶","teal")}</div>
-          <div class="vault-details"><h4>${escapeHtml(w.label)} · ${escapeHtml(w.ssid)}</h4>
-            <p>${w.password ? escapeHtml(w.password) : "Open network"}${w.location ? " · " + escapeHtml(w.location) : ""}</p></div></div>
-        <div class="vault-actions">
-          <button class="vault-btn" onclick='showWifiQr(${JSON.stringify(_wifiString(w))}, ${JSON.stringify(w.ssid)})'>${ic("qr")} QR</button>
-          ${w.password ? `<button class="vault-btn" onclick='copyText(${JSON.stringify(w.password)})' title="Copy password">${ic("copy")}</button>` : ""}
-          <button class="vault-btn delete" onclick="deleteWifi(${w.id})" title="Delete">${ic("trash")}</button>
-        </div>
-      </div>`).join("");
+    _wifiCache = data.wifi || [];
+    if (!_wifiCache.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">${ep("📶","teal")}</div><p>No WiFi networks saved</p><small>Add a network and share it with a guest QR</small></div>`; return; }
+    const si = document.getElementById("wifiFilter");
+    if (si && si.value.trim()) { filterWifiList(si.value); return; }
+    _renderWifi(_wifiCache, "");
   } catch (err) { toast("Could not load WiFi: " + err.message, "error"); }
+}
+
+function _renderWifi(rows, query) {
+  const list = document.getElementById("wifiList");
+  if (!list) return;
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty-state"><p>Nothing matches “${escapeHtml(query || "")}”</p><small>Try the network name, SSID or location tag</small></div>`;
+    return;
+  }
+  list.innerHTML = rows.map(w => {
+    const hasPw = !!w.password;
+    return `
+    <div class="vault-item">
+      <div class="vault-info"><div class="vault-icon">${ep("📶","teal")}</div>
+        <div class="vault-details"><h4>${escapeHtml(w.label)} <span class="wifi-ssid">${escapeHtml(w.ssid)}</span> ${_wifiBadge(w.security)}</h4>
+          <p><span class="wifi-pw-wrap"><code class="wifi-pw" id="wifipw-${w.id}" data-revealed="0">${hasPw ? "••••••••" : "Open network"}</code>${hasPw ? `<button class="vault-btn mini wifi-eye" onclick="toggleWifiPw(${w.id})" title="Show / hide password">${ic("eye")}</button>` : ""}</span>
+          ${w.location ? `<span class="wifi-loc">${ic("pin")} ${escapeHtml(w.location)}</span>` : ""}</p></div></div>
+      <div class="vault-actions">
+        <button class="vault-btn" onclick='showWifiQr(${JSON.stringify(_wifiString(w))}, ${JSON.stringify(w.ssid)})' title="Show join QR">${ic("qr")} QR</button>
+        <button class="vault-btn" onclick="shareWifiGuest(${w.id})" title="Share with a guest (1-hour QR link)">${ic("share")} Share</button>
+        ${hasPw ? `<button class="vault-btn" onclick="copyWifiPw(${w.id})" title="Copy password">${ic("copy")}</button>` : ""}
+        <button class="vault-btn delete" onclick="deleteWifi(${w.id})" title="Delete">${ic("trash")}</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function shareWifiGuest(id) {
+  try {
+    const data = await api(`/wifi/${id}/share`, "POST", null, true);
+    if (!data || !data.url) { toast("Could not create share link", "error"); return; }
+    const html = `<div class="qr-overlay" id="qrOverlay" onclick="document.getElementById('qrOverlay').remove()">
+      <div class="qr-box" onclick="event.stopPropagation()">
+        <button class="qr-close" onclick="document.getElementById('qrOverlay').remove()">✕</button>
+        <h4>${ic("share")} Guest WiFi link</h4>
+        <p>Guests see <b>only the join QR</b> — no login. The link dies after <b>1 hour</b> or the <b>first view</b>.</p>
+        <div class="share-row"><code class="share-url">${escapeHtml(data.url)}</code></div>
+        <div class="share-btns">
+          <button class="vault-btn" onclick='copyText(${JSON.stringify(data.url)})'>${ic("copy")} Copy link</button>
+          <button class="vault-btn" onclick='window.open(${JSON.stringify(data.url)}, "_blank", "noopener")'>${ic("external")} Preview</button>
+        </div>
+      </div></div>`;
+    const old = document.getElementById("qrOverlay"); if (old) old.remove();
+    document.body.insertAdjacentHTML("beforeend", html);
+  } catch (err) { toast(err.message, "error"); }
 }
 async function deleteWifi(id) {
   if (!confirm("Delete this WiFi network?")) return;
@@ -1418,8 +1471,8 @@ async function showWifiQr(text, name) {
 }
 
 /* ==================== SERVERS ==================== */
-function showServerForm() { document.getElementById("serverForm").classList.remove("hidden"); document.getElementById("btnAddServer").onclick = hideServerForm; document.getElementById("btnAddServer").textContent = "Hide"; }
-function hideServerForm() { document.getElementById("serverForm").classList.add("hidden"); document.getElementById("btnAddServer").onclick = showServerForm; document.getElementById("btnAddServer").textContent = "＋ Add server"; ["serverName","serverHost","serverPort","serverUsername","serverPassword","serverNote"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+function showServerForm() { _setAddForm("server", true); }
+function hideServerForm() { _setAddForm("server", false); }
 async function saveServer() {
   const name = document.getElementById("serverName").value.trim();
   const host = document.getElementById("serverHost").value.trim();
@@ -1454,8 +1507,8 @@ async function deleteServer(id) {
 }
 
 /* ==================== RECOVERY PHRASES ==================== */
-function showRecoveryForm() { document.getElementById("recoveryForm").classList.remove("hidden"); document.getElementById("btnAddRecovery").onclick = hideRecoveryForm; document.getElementById("btnAddRecovery").textContent = "Hide"; }
-function hideRecoveryForm() { document.getElementById("recoveryForm").classList.add("hidden"); document.getElementById("btnAddRecovery").onclick = showRecoveryForm; document.getElementById("btnAddRecovery").textContent = "＋ Add phrase"; ["recoveryLabel","recoveryWords"].forEach(i=>{const e=document.getElementById(i);if(e)e.value="";}); }
+function showRecoveryForm() { _setAddForm("recovery", true); }
+function hideRecoveryForm() { _setAddForm("recovery", false); }
 async function saveRecovery() {
   const label = document.getElementById("recoveryLabel").value.trim();
   const words = document.getElementById("recoveryWords").value.trim();
@@ -2514,19 +2567,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // "Add New" buttons
   const btnAddVault = document.getElementById("btnAddVault");
-  if (btnAddVault) btnAddVault.addEventListener("click", showVaultForm);
+  if (btnAddVault) btnAddVault.addEventListener("click", () => _setAddForm("vault"));
   const btnAddCard = document.getElementById("btnAddCard");
-  if (btnAddCard) btnAddCard.addEventListener("click", showCardForm);
+  if (btnAddCard) btnAddCard.addEventListener("click", () => _setAddForm("card"));
   const btnAddIdentity = document.getElementById("btnAddIdentity");
-  if (btnAddIdentity) btnAddIdentity.addEventListener("click", showIdentityForm);
+  if (btnAddIdentity) btnAddIdentity.addEventListener("click", () => _setAddForm("identity"));
   const btnAddContact = document.getElementById("btnAddContact");
-  if (btnAddContact) btnAddContact.addEventListener("click", showContactForm);
+  if (btnAddContact) btnAddContact.addEventListener("click", () => _setAddForm("contact"));
   const btnAddWifi = document.getElementById("btnAddWifi");
-  if (btnAddWifi) btnAddWifi.addEventListener("click", showWifiForm);
+  if (btnAddWifi) btnAddWifi.addEventListener("click", () => _setAddForm("wifi"));
   const btnAddServer = document.getElementById("btnAddServer");
-  if (btnAddServer) btnAddServer.addEventListener("click", showServerForm);
+  if (btnAddServer) btnAddServer.addEventListener("click", () => _setAddForm("server"));
   const btnAddRecovery = document.getElementById("btnAddRecovery");
-  if (btnAddRecovery) btnAddRecovery.addEventListener("click", showRecoveryForm);
+  if (btnAddRecovery) btnAddRecovery.addEventListener("click", () => _setAddForm("recovery"));
   // Code IDE wiring
   const btnSaveSnippet = document.getElementById("btnSaveSnippet");
   if (btnSaveSnippet) btnSaveSnippet.addEventListener("click", saveSnippet);
@@ -2606,9 +2659,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape") { const c = document.querySelector(".cs-canvas.full"); if (c) toggleEditorFullscreen(); }
   });
   const btnAddNote = document.getElementById("btnAddNote");
-  if (btnAddNote) btnAddNote.addEventListener("click", showNoteForm);
+  if (btnAddNote) btnAddNote.addEventListener("click", () => _setAddForm("note"));
   const btnAddBookmark = document.getElementById("btnAddBookmark");
-  if (btnAddBookmark) btnAddBookmark.addEventListener("click", showBookmarkForm);
+  if (btnAddBookmark) btnAddBookmark.addEventListener("click", () => _setAddForm("bookmark"));
 
   // Tab click handlers (desktop)
   document.querySelectorAll(".dash-tab").forEach(tab => {
@@ -2840,7 +2893,7 @@ async function loadJobs() {
     // Flicker guard: rebuild the list ONLY when statuses actually changed
     // (uptime seconds ticking must not steal DOM/repaint every 7s).
     const jobs = (data && data.jobs) || [];
-    const sig = jobs.map(j => [j.id, j.status, j.restarts].join(":")).join("|");
+    const sig = jobs.map(j => [j.id, j.status, j.restarts, j.web ? 1 : 0, j.web_public === false ? 0 : 1].join(":")).join("|");
     if (sig !== _lastJobsSig) { _lastJobsSig = sig; renderJobs(jobs); }
   } catch (e) {
     const sig = "ERR:" + e.message;
@@ -2869,7 +2922,7 @@ function renderJobs(jobs) {
   if (!jobs.length) {
     const div = document.createElement("div");
     div.className = "jobs-empty";
-    div.textContent = "⚡ No jobs yet — paste code above and hit ▶ Start 24/7!";
+    div.innerHTML = ic("zap") + ' No jobs yet — paste code above and press <b>Start 24/7</b>. If your code opens a web port ($PORT), its public URL appears right here.';
     list.appendChild(div);
     return;
   }
@@ -2877,12 +2930,17 @@ function renderJobs(jobs) {
     const st = (j.status || "offline").toLowerCase();
     const card = document.createElement("div");
     card.className = "job-card";
+    const isPub = j.web_public !== false;
     // Row 1: status dot + name (left) — action buttons (right)
     // Row 2: meta info, full width. Consistent alignment, no ragged wrap.
+    // Row 3 (web jobs only): public URL + copy/open + access pill.
     card.innerHTML =
       '<div class="job-top">' +
         '<span class="job-dot ' + st + '"></span>' +
         '<span class="job-name">' + escapeHtml(j.name) + '</span>' +
+        (j.web_url && st === "running" && j.web
+          ? '<span class="job-pill ' + (isPub ? "pub" : "priv") + '">' + (isPub ? "Public" : "Private") + '</span>'
+          : '') +
         '<span class="job-actions"></span>' +
       '</div>' +
       '<div class="job-meta">' + escapeHtml(j.language) + ' · ' +
@@ -2890,6 +2948,23 @@ function renderJobs(jobs) {
         (j.uptime_s ? ' · up ' + _fmtUptime(j.uptime_s) : '') +
         (j.restarts ? ' · restarts ' + j.restarts : '') +
       '</div>';
+    // Public URL row: ONLY when the runner actually detected a web listener.
+    if (j.web_url && j.web && st === "running") {
+      const shownUrl = isPub ? j.web_url : (j.web_private_url || j.web_url);
+      const row = document.createElement("div");
+      row.className = "job-url";
+      row.innerHTML = ic("globe") + '<code title="' + escapeHtml(shownUrl) + '">' + escapeHtml(shownUrl) + '</code>';
+      const mk2 = (label, title, fn) => {
+        const b = document.createElement("button");
+        b.className = "vault-btn"; b.innerHTML = label; b.title = title;
+        b.addEventListener("click", fn); row.appendChild(b);
+      };
+      mk2(ic("copy"), "Copy URL", () => copyText(shownUrl));
+      mk2(ic("external"), "Open in new tab", () => window.open(shownUrl, "_blank", "noopener"));
+      mk2(ic(isPub ? "lock" : "globe"), isPub ? "Make private (only you can open it)" : "Make public (anyone with the link)",
+        () => toggleJobAccess(j.id, !isPub));
+      card.appendChild(row);
+    }
     const actions = card.querySelector(".job-actions");
     const mkBtn = (label, cls, fn) => {
       const b = document.createElement("button");
@@ -2904,6 +2979,19 @@ function renderJobs(jobs) {
     mkBtn(ic("trash"), "danger", () => deleteJobById(j.id));
     list.appendChild(card);
   });
+}
+
+async function toggleJobAccess(id, makePublic) {
+  try {
+    const info = await api(`/api/jobs/${id}/access`, "POST", { public: makePublic }, true);
+    if (info && info.web_private_url) {
+      toast("Private link ready — copied ✓", "success");
+      copyText(info.web_private_url);
+    } else {
+      toast(makePublic ? "Job URL is now PUBLIC" : "Job URL is now PRIVATE", "info");
+    }
+    loadJobs();
+  } catch (e) { toast(e.message, "error"); }
 }
 
 async function startJob() {

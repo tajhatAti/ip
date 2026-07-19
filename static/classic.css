@@ -1245,3 +1245,156 @@ body.ed-full { overflow: hidden !important; }
   .bc-grid { grid-template-columns: 1fr; }
   .ah-modal-card { padding: 18px 16px 20px !important; }
 }
+
+/* ================= 24. CODE-STUDIO PRO LAYOUT (unlock viewport jail) ====
+   The studio was a viewport-locked flex column (height:100vh-sh, overflow
+   hidden): the saved-projects strip was squished into a ~150px slit and its
+   cards still used the OLD dark theme (cream text on light paper = broken
+   miniature page). Now the tab flows as a normal page: roomy editor, then a
+   full Saved-projects section with classic-theme cards. */
+#tab-code.code-studio {
+  height: auto !important; min-height: 0 !important;
+  overflow: visible !important; background: transparent !important;
+  border-radius: 0 !important;
+}
+.code-studio { display: block !important; }
+.code-studio .cs-header { margin-bottom: 12px; }
+.code-studio .cs-canvas { margin-bottom: 12px; }
+.code-studio .ah-term { margin-bottom: 12px; }
+.code-studio .cs-projects {
+  max-height: none !important; overflow: visible !important;
+  margin-top: 0 !important; padding: 16px 16px 18px !important;
+}
+.code-studio .cs-proj-head { margin-bottom: 12px; }
+.code-studio .cs-proj-head h3 { font-size: 15px !important; }
+
+/* saved snippet cards — classic light cards, roomy, aligned */
+.code-studio .snippet-item {
+  background: var(--panel) !important; border: 1px solid var(--line) !important;
+  border-radius: var(--r-md) !important; box-shadow: var(--shadow-s) !important;
+  margin-bottom: 10px; overflow: hidden;
+}
+.code-studio .snippet-item:hover { border-color: var(--line-2) !important; }
+.code-studio .snippet-head h4 { color: var(--ink) !important; font-weight: 650 !important; }
+.code-studio .snippet-lang {
+  background: var(--acc-soft) !important; color: var(--acc) !important;
+  font-weight: 600 !important;
+}
+.code-studio .snippet-actions .vault-btn {
+  background: var(--paper) !important; border: 1px solid var(--line-2) !important;
+  color: var(--ink-2) !important; border-radius: var(--r-sm) !important;
+  padding: 6px 11px !important; font-size: 12px !important; font-weight: 550 !important;
+}
+.code-studio .snippet-actions .vault-btn:hover {
+  border-color: var(--acc) !important; color: var(--acc) !important;
+  background: var(--acc-soft) !important;
+}
+.code-studio .snippet-actions .vault-btn.delete:hover {
+  border-color: var(--red) !important; color: var(--red) !important; background: transparent !important;
+}
+.code-studio .snippet-code {
+  background: var(--paper) !important; color: var(--ink-2) !important;
+  border-top: 1px solid var(--line) !important; border-bottom: 1px solid var(--line) !important;
+  font-size: 12px !important; max-height: 138px; overflow: hidden auto;
+}
+.code-studio .snippet-share-url { padding: 10px 14px !important; }
+.code-studio .snippet-share-url span { font-size: 12px !important; }
+.code-studio .snippet-share-url code {
+  color: var(--acc) !important; background: var(--acc-soft) !important;
+  border: none !important;
+}
+.code-studio .snippet-share-url .vault-btn {
+  background: var(--btn) !important; color: var(--btn-fg) !important;
+  border: none !important; text-decoration: none !important;
+  border-radius: var(--r-sm) !important; padding: 6px 12px !important; font-size: 12px !important;
+}
+.code-studio .snippet-share-url .vault-btn:hover { background: var(--btn-hover) !important; }
+.code-studio .empty-state, .code-studio .loading-state { padding: 26px 10px; }
+.code-studio .empty-state p, .code-studio .empty-state small { color: var(--ink-2) !important; }
+
+/* ================= 24b. JOBS CARDS — classic theme ==================== */
+#tab-jobs .job-card {
+  background: var(--panel) !important; border: 1px solid var(--line) !important;
+  border-radius: var(--r-md) !important; box-shadow: var(--shadow-s) !important;
+  padding: 14px 16px;
+}
+#tab-jobs .job-card:hover { border-color: var(--line-2) !important; }
+#tab-jobs .job-top { flex-wrap: wrap; }
+#tab-jobs .job-name { color: var(--ink) !important; font-weight: 650 !important; }
+#tab-jobs .job-meta { color: var(--muted) !important; font-family: var(--mono) !important; }
+#tab-jobs .job-btn {
+  background: var(--paper) !important; border: 1px solid var(--line-2) !important;
+  color: var(--ink-2) !important; border-radius: var(--r-sm) !important;
+  padding: 6px 11px !important; font-weight: 550 !important;
+}
+#tab-jobs .job-btn:hover { border-color: var(--acc) !important; color: var(--acc) !important; background: var(--acc-soft) !important; }
+#tab-jobs .job-btn.danger { color: var(--red) !important; border-color: rgba(179,38,30,.4) !important; }
+#tab-jobs .job-btn.danger:hover { background: var(--red) !important; color: #fff !important; border-color: var(--red) !important; }
+#tab-jobs .job-dot.running { background: var(--green); box-shadow: 0 0 8px rgba(30,122,60,.5); }
+#tab-jobs .job-dot.crashed, #tab-jobs .job-dot.install_failed { background: var(--red); }
+#tab-jobs .job-dot.stopped, #tab-jobs .job-dot.offline { background: var(--muted); }
+#tab-jobs .job-dot.installing { background: var(--acc); box-shadow: 0 0 8px rgba(188,67,8,.5); }
+#tab-jobs .jobs-empty { font-size: 13px; }
+/* public URL row of a web-server job */
+.job-url {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--acc-soft) !important; border: 1px dashed var(--acc) !important;
+  border-radius: var(--r-sm) !important; padding: 8px 10px; margin-top: 2px;
+}
+.job-url .ic { font-size: 14px; color: var(--acc); }
+.job-url code {
+  font-family: var(--mono); font-size: 11.5px; color: var(--acc);
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.job-url .vault-btn { padding: 4px 9px !important; font-size: 11px !important; }
+.job-pill {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; font-weight: 600;
+  text-transform: uppercase; border-radius: 99px; padding: 2.5px 8px;
+  border: 1px solid var(--line-2); color: var(--muted);
+}
+.job-pill.pub { color: var(--green); border-color: rgba(30,122,60,.45); }
+.job-pill.priv { color: var(--acc); border-color: rgba(188,67,8,.5); }
+
+/* ============================================================
+§25  WiFi badges / share modal / jobs live-note
+============================================================ */
+.jobs-note {
+  font-family: var(--sans); font-size: 12px; color: var(--muted);
+  background: var(--panel-2) !important; border: 1px dashed var(--line-2) !important;
+  border-radius: var(--r-sm) !important; padding: 8px 12px; margin: -6px 0 14px !important;
+}
+.jobs-sub code, .jobs-note code { font-family: var(--mono); font-size: 11.5px; color: var(--acc); }
+
+/* filter field above the WiFi list — quiet, full-width */
+.wifi-filter { margin: 4px 0 12px !important; font-size: 13px !important; }
+
+/* network type badge — tiny colored tag on the list row */
+.wifi-badge {
+  display: inline-block; font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; border-radius: 99px;
+  padding: 2px 8px; border: 1px solid var(--line-2); color: var(--muted);
+  vertical-align: 1px; margin-left: 4px;
+}
+.wifi-badge.wpa  { color: var(--green); border-color: rgba(30,122,60,.45); background: rgba(30,122,60,.07); }
+.wifi-badge.wpa2 { color: var(--green); border-color: rgba(30,122,60,.45); background: rgba(30,122,60,.07); }
+.wifi-badge.wep  { color: var(--acc); border-color: rgba(188,67,8,.5); background: var(--acc-soft); }
+.wifi-badge.open { color: var(--muted); }
+
+.wifi-ssid { color: var(--muted); font-weight: 400; font-size: .92em; }
+.wifi-pw {
+  font-family: var(--mono) !important; font-size: 12px !important;
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 2px 8px; letter-spacing: .04em;
+}
+.wifi-pw-wrap { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; }
+.wifi-loc { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
+.wifi-loc .ic { font-size: 12px; }
+.vault-btn.mini { padding: 2px 6px !important; font-size: 12px !important; line-height: 1 !important; min-height: 0 !important; }
+
+/* guest-share modal rows */
+.share-row {
+  background: var(--panel-2); border: 1px dashed var(--line-2); border-radius: var(--r-sm);
+  padding: 9px 12px; margin: 10px 0;
+}
+.share-url { font-family: var(--mono); font-size: 11.5px; color: var(--acc); word-break: break-all; }
+.share-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }

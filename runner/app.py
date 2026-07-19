@@ -21,22 +21,37 @@ The shared secret (RUNNER_SERVICE_SECRET) authenticates every request.
 import os
 import re
 import json
+import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import uuid
+import asyncio
 import logging
 from collections import deque
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
+
+# Proxy bridge dependencies. They ship in requirements.txt; the lazy guards
+# keep the runner importable (jobs still work) on a box missing them.
+try:
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None
+
+try:
+    import websockets
+except ImportError:  # pragma: no cover
+    websockets = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("runner")
@@ -295,12 +310,164 @@ JOB_PIP_TIMEOUT_S = int(os.getenv("JOB_PIP_TIMEOUT_S", "240"))  # pip install bu
 _jobs: dict = {}                                    # id -> job record
 _jobs_lock = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# PUBLIC WEB ADDRESSES — /live/{job-slug}/
+# A job that opens a listening socket gets a public URL on THIS runner:
+#   https://<runner-host>/live/{slug}/  →  http://127.0.0.1:{job port}/...
+# The proxy lives HERE (not the main site) because job processes bind ports
+# inside this container — only this process can reach them.
+# Path-style URLs (no wildcard subdomains on Render). The slug+port belong to
+# the job record itself, so crash-restarts keep the same public address.
+# ---------------------------------------------------------------------------
+LIVE_PORT_MIN = int(os.getenv("LIVE_PORT_MIN", "11000"))
+LIVE_PORT_MAX = int(os.getenv("LIVE_PORT_MAX", "11099"))
+LIVE_RATE_LIMIT = int(os.getenv("LIVE_RATE_LIMIT", "60"))      # req per minute per visitor IP per job
+LIVE_RATE_WINDOW_S = 60
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")  # e.g. https://ahad-code-runner.onrender.com
+
+_live_hits: dict = {}        # (slug, ip) -> deque[timestamps]  (in-memory rate limiter)
+_live_hits_lock = threading.Lock()
+
+
+def _purge_orphan_jobs() -> None:
+    """Jobs run with start_new_session=True, so an old job can OUTLIVE the
+    runner itself (platform restart) — an orphaned process squatting on a
+    pool port and a stale temp dir, while the new runner's port-allocator
+    starts clean. Reclaim the box: kill leftovers, wipe their dirs."""
+    if os.name != "posix":
+        return
+    tmp = tempfile.gettempdir()
+    me = os.getpid()
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit() or int(pid) == me:
+                continue
+            try:
+                cwd = os.readlink(f"/proc/{pid}/cwd")
+                if cwd.startswith(tmp + "/job_"):
+                    os.kill(int(pid), signal.SIGKILL)
+                    logger.info("Purged orphaned job process %s (cwd %s)", pid, cwd)
+            except Exception:
+                pass
+        for d in Path(tmp).glob("job_*"):
+            shutil.rmtree(d, ignore_errors=True)
+    except Exception:
+        pass
+
+
+_purge_orphan_jobs()
+
+_HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length",
+}
+
+
+def _alloc_port() -> Optional[int]:
+    """Lowest free port in the pool, or None when the pool is exhausted."""
+    with _jobs_lock:
+        used = {j.get("port") for j in _jobs.values() if j.get("port")}
+    for p in range(LIVE_PORT_MIN, LIVE_PORT_MAX + 1):
+        if p not in used:
+            return p
+    return None
+
+
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return (s[:18].strip("-") or "job") + "-" + secrets.token_hex(3)
+
+
+def _live_page(title: str, body: str, accent: str = "#0f0e0c") -> HTMLResponse:
+    """Tiny self-contained status page for public /live/ visitors."""
+    html = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title><style>
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#faf9f6;
+font-family:Georgia,'Times New Roman',serif;color:#141310}}
+.card{{max-width:430px;margin:20px;padding:34px 30px;text-align:center;background:#fff;
+border:1px solid #e4e0d5;border-top:3px solid {accent};box-shadow:0 18px 40px -26px rgba(20,19,16,.28)}}
+h1{{font-size:21px;margin:0 0 10px;font-weight:600}}
+p{{font-size:14px;line-height:1.65;margin:6px 0;color:#5c584e}}
+.note{{margin-top:16px;padding-top:12px;border-top:1px dashed #e4e0d5;font-size:12px;color:#8a8474}}
+</style></head><body><div class="card">{body}</div></body></html>"""
+    return HTMLResponse(html)
+
+
+def _find_job_by_slug(slug: str) -> Optional[dict]:
+    with _jobs_lock:
+        for j in _jobs.values():
+            if j.get("web_slug") == slug:
+                return j
+    return None
+
+
+def _job_running(j: dict) -> bool:
+    p = j.get("proc")
+    return bool(p is not None and p.poll() is None)
+
+
+def _live_rate_ok(slug: str, ip: str) -> bool:
+    """Fixed-window-ish limiter: LIVE_RATE_LIMIT requests / minute / IP / job."""
+    now = time.time()
+    key = (slug, ip or "?")
+    with _live_hits_lock:
+        q = _live_hits.get(key)
+        if q is None:
+            q = _live_hits[key] = deque()
+        while q and now - q[0] > LIVE_RATE_WINDOW_S:
+            q.popleft()
+        if len(q) >= LIVE_RATE_LIMIT:
+            return False
+        q.append(now)
+        return True
+
+
+def _web_watch(j: dict, proc: subprocess.Popen, port: int) -> None:
+    """Watchdog thread: poll the job's port and flip j["web"] as the listener
+    comes up (and down). Started with every spawn; survives crash-restarts
+    because each restart spawns a fresh watcher for the new process.
+
+    Debounced: ONE good probe flips web ON, but it takes 3 consecutive
+    failures to flip it OFF — a single-threaded server momentarily busy
+    serving a request must not pause the public URL (flapping)."""
+    polls = 0
+    miss_streak = 0
+    while True:
+        if j.get("stop_requested") or j.get("id") not in _jobs:
+            return
+        if j.get("proc") is not proc or proc.poll() is not None:
+            return  # process replaced or exited — the new spawn watches anew
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.7):
+                up = True
+        except OSError:
+            up = False
+        if up:
+            miss_streak = 0
+            if not j.get("web"):
+                j["web"] = True
+                pub = (PUBLIC_BASE_URL + f"/live/{j['web_slug']}/") if PUBLIC_BASE_URL else f"/live/{j['web_slug']}/"
+                j["log"].append(f"[system] web service detected on port {port} — public URL: {pub}")
+                logger.info("Job %s web listener up on :%s", j.get("id"), port)
+        else:
+            miss_streak += 1
+            if j.get("web") and miss_streak >= 3:
+                j["web"] = False
+                j["log"].append("[system] web port closed — public URL is paused")
+        polls += 1
+        time.sleep(0.75 if polls < 45 else 2.5)  # eager at boot, relaxed later
+
 
 class JobStartRequest(BaseModel):
     language: str
     code: str
     name: Optional[str] = ""
     restart: Optional[bool] = True
+
+
+class JobAccessRequest(BaseModel):
+    public: bool = True
 
 
 def _parse_requirements(code: str) -> list:
@@ -480,6 +647,12 @@ def _job_public(j: dict) -> dict:
         "restarts": j["restarts"],
         "started_at": j["started_at"],
         "uptime_s": int(time.time() - j["started_at"]) if running else 0,
+        "web": bool(j.get("web")),
+        "web_slug": j.get("web_slug"),
+        "web_public": bool(j.get("web_public", True)),
+        # access_key only reaches the main site (this API is secret-guarded) —
+        # it builds the private share-link ?key= for the job owner.
+        "access_key": j.get("access_key") if not j.get("web_public", True) else None,
     }
 
 
@@ -506,6 +679,12 @@ def _spawn(j: dict) -> None:
     env = dict(os.environ)
     if j.get("pylibs"):
         env["PYTHONPATH"] = j["pylibs"] + os.pathsep + env.get("PYTHONPATH", "")
+    # Web-capable jobs: every job gets a reserved private port. Frameworks
+    # (Flask/Express/FastAPI/http.server) bound through $PORT get a public
+    # /live/{slug}/ address the moment their listener comes up.
+    if j.get("port"):
+        env["PORT"] = str(j["port"])
+        env["HOST"] = "0.0.0.0"
     proc = subprocess.Popen(
         cmd, cwd=j["dir"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,  # merged, VPS-style
@@ -517,6 +696,11 @@ def _spawn(j: dict) -> None:
     j["proc"] = proc
     j["status"] = "running"
     j["log"].append(f"[system] started (pid {proc.pid})")
+
+    # Reset the web flag for this incarnation and start a fresh port watchdog.
+    j["web"] = False
+    if j.get("port"):
+        threading.Thread(target=_web_watch, args=(j, proc, j["port"]), daemon=True).start()
 
     def _reader():
         try:
@@ -602,6 +786,13 @@ def job_start(req: JobStartRequest, authorization: Optional[str] = Header(None))
         "restart_enabled": bool(req.restart),
         "stop_requested": False,
         "started_at": time.time(),
+        # Public web identity — assigned ONCE here so crash auto-restarts keep
+        # the exact same /live/{slug}/ address and port.
+        "port": _alloc_port(),
+        "web": False,
+        "web_slug": _slugify(req.name or job_id),
+        "web_public": True,
+        "access_key": secrets.token_urlsafe(12),
     }
     with _jobs_lock:
         _jobs[job_id] = job
@@ -643,11 +834,202 @@ def job_stop(job_id: str, authorization: Optional[str] = Header(None)):
     _kill_job_tree(j)
     j["status"] = "stopped"
     j["log"].append("[system] stopped by user")
+    # Release the reserved port + web flag so the pool serves other jobs.
+    j["web"] = False
+    with _jobs_lock:
+        j["port"] = None
     # Free the disk while the job definition is still visible.
     if os.path.isdir(j["dir"]):
         shutil.rmtree(j["dir"], ignore_errors=True)
     logger.info("Job %s stopped", job_id)
     return _job_public(j)
+
+
+@app.post("/internal/jobs/{job_id}/access")
+def job_access(job_id: str, req: JobAccessRequest, authorization: Optional[str] = Header(None)):
+    """Toggle a job's public URL between Public and Private (owner key needed)."""
+    _check_secret(authorization)
+    j = _jobs.get(job_id)
+    if not j:
+        raise HTTPException(404, detail="Job not found.")
+    j["web_public"] = bool(req.public)
+    j["log"].append(f"[system] web access set to {'PUBLIC' if j['web_public'] else 'PRIVATE'}")
+    return _job_public(j)
+
+
+# ---------------------------------------------------------------------------
+# PUBLIC GATEWAY — /live/{slug}/...  →  http://127.0.0.1:{job port}/...
+# No shared-secret check here: these URLs are meant for the OPEN web (and
+# "private" jobs are protected by their own access key instead).
+# ---------------------------------------------------------------------------
+
+def _live_gate(slug: str, request: Request):
+    """Shared checks for every /live/ visit.
+
+    Returns (job, None) when the visit may proceed, else (None, response)."""
+    j = _find_job_by_slug(slug)
+    if not j:
+        return None, _live_page(
+            "No job here",
+            "<h1>No job lives at this address</h1><p>It may have been stopped or deleted — the address is free again.</p>",
+        )
+    running = _job_running(j)
+    if not running:
+        return None, _live_page(
+            "Job not running",
+            f"<h1>This job is not running</h1><p>Start it again from the Ahad&nbsp;Co dashboard and refresh.</p>"
+            f'<p class="note">Public job URLs are live only while the job is running.<br>'
+            f"For production use, deploy as a dedicated service instead.</p>",
+        )
+    # Private gate: owner's access key must arrive as ?key= or X-Access-Key.
+    if not j.get("web_public", True):
+        key = request.query_params.get("key") or request.headers.get("x-access-key") or ""
+        if key != j.get("access_key"):
+            return None, HTMLResponse(_live_page(
+                "Private job",
+                "<h1>This job is private</h1><p>Only its owner can open this address.</p>",
+            ).body, status_code=401)
+    if not j.get("web") or not j.get("port"):
+        return None, _live_page(
+            "No web service yet",
+            "<h1>The job is running, but no web listener yet</h1>"
+            f"<p>If it is a web app, make sure it binds host <b>0.0.0.0</b> and the port from the <b>PORT</b> environment variable (currently {j.get('port') or 'n/a'}).</p>"
+            '<p class="note">This URL appears automatically the moment your app opens its port.</p>',
+        )
+    ip = request.client.host if request.client else "?"
+    if not _live_rate_ok(slug, ip):
+        return None, HTMLResponse(_live_page(
+            "Slow down",
+            "<h1>Rate limit reached</h1><p>Too many requests — please wait a minute and try again.</p>",
+        ).body, status_code=429)
+    return j, None
+
+
+_LIVE_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+
+
+@app.api_route("/live/{slug}", methods=_LIVE_METHODS, include_in_schema=False)
+@app.api_route("/live/{slug}/{full_path:path}", methods=_LIVE_METHODS, include_in_schema=False)
+async def live_http(slug: str, request: Request, full_path: str = ""):
+    """Reverse-proxy an HTTP request into the job's localhost listener.
+    The /live/{slug} prefix is stripped before forwarding."""
+    j, early = _live_gate(slug, request)
+    if early is not None:
+        return early
+    if httpx is None:
+        return HTMLResponse("<h1>Proxy unavailable</h1>", status_code=503)
+
+    query = request.url.query
+    target = f"http://127.0.0.1:{j['port']}/{full_path}" + (f"?{query}" if query else "")
+    headers = {
+        k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP
+    }
+    headers["x-forwarded-for"] = request.client.host if request.client else ""
+    headers["x-forwarded-prefix"] = f"/live/{slug}"
+    try:
+        body = await request.body()
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            resp = await client.request(request.method, target, content=body, headers=headers)
+    except httpx.ConnectError:
+        j["web"] = False  # listener just died — let the watchdog re-detect
+        return HTMLResponse(_live_page(
+            "Just a moment",
+            "<h1>The web service just went quiet</h1><p>Refreshing in a few moments usually fixes it.</p>",
+        ).body, status_code=502)
+    except httpx.HTTPError:
+        return HTMLResponse(_live_page(
+            "Job busy",
+            "<h1>The job took too long to answer</h1><p>Try again shortly.</p>",
+        ).body, status_code=504)
+
+    # 302/301/307 redirects to root-absolute paths would drop the /live/{slug}
+    # prefix — rewrite them so logins and form posts keep working.
+    out_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() not in _HOP_BY_HOP
+    }
+    loc = resp.headers.get("location")
+    if loc:
+        if loc.startswith("/") and not loc.startswith("//"):
+            out_headers["location"] = f"/live/{slug}{loc}"
+        elif loc.startswith(f"http://127.0.0.1:{j['port']}"):
+            out_headers["location"] = f"/live/{slug}" + loc[len(f"http://127.0.0.1:{j['port']}"):]
+
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=out_headers,
+    )
+
+
+@app.websocket("/live/{slug}")
+@app.websocket("/live/{slug}/{full_path:path}")
+async def live_ws(websocket: WebSocket, slug: str, full_path: str = ""):
+    """Bridge WebSocket clients (chat apps, live dashboards) bidirectionally."""
+    # Manual gate (WebSocket has no Request object) — same rules as HTTP.
+    j = _find_job_by_slug(slug)
+    reason = None
+    if not j or not _job_running(j):
+        reason = (404, "job not running")
+    elif not j.get("web_public", True):
+        key = websocket.query_params.get("key") or websocket.headers.get("x-access-key") or ""
+        if key != j.get("access_key"):
+            reason = (401, "private job")
+    elif not j.get("web") or not j.get("port"):
+        reason = (503, "no web listener")
+    elif websockets is None:
+        reason = (503, "proxy unavailable")
+    if reason:
+        code, why = reason
+        await websocket.close(code=4400 + code // 100, reason=why)
+        return
+
+    await websocket.accept()
+    query = websocket.url.query
+    target = f"ws://127.0.0.1:{j['port']}/{full_path}" + (f"?{query}" if query else "")
+
+    try:
+        async with websockets.connect(target, ping_interval=None, max_queue=32) as upstream:
+            async def client_to_upstream():
+                try:
+                    while True:
+                        msg = await websocket.receive()
+                        if msg.get("type") == "websocket.disconnect":
+                            break
+                        if msg.get("text") is not None:
+                            await upstream.send(msg["text"])
+                        elif msg.get("bytes") is not None:
+                            await upstream.send(msg["bytes"])
+                except (WebSocketDisconnect, RuntimeError):
+                    pass
+                try:
+                    await upstream.close()
+                except Exception:
+                    pass
+
+            async def upstream_to_client():
+                try:
+                    async for data in upstream:
+                        if isinstance(data, str):
+                            await websocket.send_text(data)
+                        else:
+                            await websocket.send_bytes(data)
+                except Exception:
+                    pass
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
+
+            tasks = [asyncio.create_task(client_to_upstream()), asyncio.create_task(upstream_to_client())]
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+    except Exception:
+        pass
+    try:
+        await websocket.close()
+    except Exception:
+        return
 
 
 if __name__ == "__main__":

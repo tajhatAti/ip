@@ -434,6 +434,7 @@
           <button class="btn-ghost sm" onclick="hideWifiForm()">Cancel</button>
         </div>
       </div>
+      <input type="text" id="wifiFilter" class="input-text wifi-filter" placeholder="Search by name, SSID or location…" oninput="filterWifiList(this.value)">
       <div class="vault-list" id="wifiList"></div>
     </div>
 
@@ -555,12 +556,13 @@
       <div class="tab-head">
         <div><div class="eyebrow">24/7 TASKS</div><h2>Always-On Jobs</h2></div>
       </div>
-      <p class="jobs-sub">Bots, scrapers, loops — code that keeps running day & night (max 3 jobs). If it crashes, it restarts itself.</p>
+      <p class="jobs-sub">Bots, scrapers, loops — code that keeps running day &amp; night (max 3 jobs). If it crashes, it restarts itself. If your code opens a web server on the <code>PORT</code> env variable (bind <code>0.0.0.0</code>), a public <code>/live/…</code> URL appears under the job — copy &amp; share it.</p>
+      <p class="jobs-note">Live URLs work only while the job is running. For production traffic, deploy as a dedicated web service instead.</p>
 
       <div class="job-form">
         <div class="job-form-head">
           24/7 RUNNER PANEL
-          <span class="job-form-hint">just paste code — needed libraries install automatically · Ctrl+Enter = start</span>
+          <span class="job-form-hint">just paste code — needed libraries install automatically · web servers get a public URL · Ctrl+Enter = start</span>
         </div>
         <div class="job-form-row">
           <input type="text" id="jobName" class="input-text" placeholder="Job name — e.g. telegram-bot" maxlength="60">
