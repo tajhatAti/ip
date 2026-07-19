@@ -1100,6 +1100,11 @@ body.ed-full { overflow: hidden !important; }
   padding: 16px !important; overflow-y: auto !important;
   opacity: 0; transition: opacity .16s var(--ease) !important;
 }
+/* Keep closed modals out of the hit-testing tree.  This selector must come
+   after .ah-modal: that rule also sets display:flex !important, so the
+   earlier generic .hidden rule loses by source order and leaves a fully
+   transparent, viewport-sized layer intercepting every click. */
+.ah-modal.hidden { display: none !important; pointer-events: none !important; }
 .ah-modal.open { opacity: 1; }
 .ah-modal-card {
   background: var(--panel) !important; border: 1px solid var(--line) !important;
