@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import asyncio
 import secrets
 import logging
 import pyotp
@@ -15,7 +16,7 @@ from collections import defaultdict
 import bcrypt
 import requests
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -44,6 +45,7 @@ INDEX_FILE = BASE_DIR / "index.html"
 STATIC_DIR = BASE_DIR / "static"
 
 OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "10"))
+MAX_OTP_ATTEMPTS = int(os.getenv("MAX_OTP_ATTEMPTS", "5"))  # wrong codes before the code dies
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 USERNAME_REGEX = re.compile(r"^[A-Za-z0-9_.-]{3,30}$")
@@ -399,6 +401,43 @@ def health():
 # ----------------------------
 # Signup / Verify (auto-login) / Resend
 # ----------------------------
+class AvailabilityCheck(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+
+
+@app.post("/auth/check-availability")
+def check_availability(payload: AvailabilityCheck, request: Request):
+    """Early duplicate check for the sign-up form (on blur / before submit).
+
+    Returns which of the two fields is taken by a VERIFIED account, so the UI
+    can say \"already registered\" — unverified leftovers don't count as taken,
+    matching the /signup rule that refreshes them instead of blocking.
+    """
+    rate_limit(f"{client_ip(request)}:avail")
+    username = (payload.username or "").strip()
+    email = (payload.email or "").strip().lower()
+
+    username_taken = False
+    email_taken = False
+    conn = get_db_connection()
+    try:
+        if username:
+            row = conn.execute(
+                "SELECT is_verified FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            username_taken = bool(row and row["is_verified"] == 1)
+        if email:
+            row = conn.execute(
+                "SELECT is_verified FROM users WHERE email = ?", (email,)
+            ).fetchone()
+            email_taken = bool(row and row["is_verified"] == 1)
+    finally:
+        conn.close()
+
+    return {"username_taken": username_taken, "email_taken": email_taken}
+
+
 @app.post("/signup")
 def signup(user: UserSignup, request: Request):
     rate_limit(f"{client_ip(request)}:signup")
@@ -440,6 +479,7 @@ def signup(user: UserSignup, request: Request):
             return {
                 "message": "Welcome back! A fresh verification code was sent to your email.",
                 "resent": True,
+                "expires_in": OTP_EXPIRY_MINUTES * 60,
             }
 
         cursor.execute("""
@@ -451,7 +491,7 @@ def signup(user: UserSignup, request: Request):
         inserted_user_id = cursor.lastrowid
 
         send_email(email, "Verify your Ahad Co account", otp, username, "Email Verification")
-        return {"message": "Account created. Check your email for the verification code."}
+        return {"message": "Account created. Check your email for the verification code.", "expires_in": OTP_EXPIRY_MINUTES * 60}
 
     except HTTPException:
         if inserted_user_id:
@@ -485,7 +525,7 @@ def resend_otp(payload: ResendOTP, request: Request):
         conn.commit()
 
         send_email(row["email"], "Your new verification code", new_otp, username, "Email Verification")
-        return {"message": "A new code has been sent to your email."}
+        return {"message": "A new code has been sent to your email.", "expires_in": OTP_EXPIRY_MINUTES * 60}
     finally:
         conn.close()
 
@@ -503,7 +543,7 @@ def verify_otp(user: UserVerify, request: Request):
     cursor = conn.cursor()
     try:
         row = cursor.execute(
-            "SELECT id, otp, otp_created_at, is_verified, username FROM users WHERE username = ?", (username,)
+            "SELECT id, otp, otp_created_at, otp_attempts, is_verified, username FROM users WHERE username = ?", (username,)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Account not found.")
@@ -518,10 +558,22 @@ def verify_otp(user: UserVerify, request: Request):
             if now_utc() > created_time + timedelta(minutes=OTP_EXPIRY_MINUTES):
                 raise HTTPException(status_code=400, detail="Code has expired. Please resend.")
             if db_otp != otp:
+                # Wrong-code limiter, server-side: after MAX_OTP_ATTEMPTS wrong
+                # tries the code is invalidated and a fresh one is required.
+                attempts = (row["otp_attempts"] or 0) + 1
+                if attempts >= MAX_OTP_ATTEMPTS:
+                    cursor.execute(
+                        "UPDATE users SET otp=NULL, otp_created_at=NULL, otp_attempts=0, updated_at=? WHERE id=?",
+                        (now_utc_str(), row["id"]))
+                    conn.commit()
+                    raise HTTPException(status_code=400, detail="Too many incorrect attempts — please request a new code.")
+                cursor.execute("UPDATE users SET otp_attempts=?, updated_at=? WHERE id=?",
+                               (attempts, now_utc_str(), row["id"]))
+                conn.commit()
                 raise HTTPException(status_code=400, detail="Incorrect code.")
 
             cursor.execute("""
-                UPDATE users SET is_verified=1, otp=NULL, otp_created_at=NULL, updated_at=?
+                UPDATE users SET is_verified=1, otp=NULL, otp_created_at=NULL, otp_attempts=0, updated_at=?
                 WHERE id=?
             """, (now_utc_str(), row["id"]))
             conn.commit()
@@ -563,10 +615,19 @@ def login(user: UserLogin, request: Request):
             # Correct credentials, but email not verified yet. Instead of an
             # error, route them straight to verification so they can finish
             # without having to re-signup.
+            remaining = OTP_EXPIRY_MINUTES * 60
+            try:
+                r2 = cursor.execute("SELECT otp_created_at FROM users WHERE id = ?", (row["id"],)).fetchone()
+                if r2 and r2["otp_created_at"]:
+                    created = datetime.fromisoformat(r2["otp_created_at"])
+                    remaining = max(0, OTP_EXPIRY_MINUTES * 60 - int((now_utc() - created).total_seconds()))
+            except Exception:
+                pass
             return {
                 "need_verify": True,
                 "username": row["username"],
                 "message": "Please verify your email to continue. A code was sent when you signed up.",
+                "expires_in": remaining,
             }
     finally:
         conn.close()
@@ -652,7 +713,7 @@ def forgot_password(payload: ForgotPasswordRequest, request: Request):
         conn.commit()
 
         send_email(email, "Reset your Ahad Co password", otp, row["username"], "Password Reset")
-        return {"message": "If this email exists, a reset code has been sent."}
+        return {"message": "If this email exists, a reset code has been sent.", "expires_in": OTP_EXPIRY_MINUTES * 60}
     finally:
         conn.close()
 
@@ -667,7 +728,7 @@ def verify_reset_otp(payload: VerifyResetOTP, request: Request):
     cursor = conn.cursor()
     try:
         row = cursor.execute(
-            "SELECT id, reset_otp, reset_otp_created_at FROM users WHERE email = ?", (email,)
+            "SELECT id, reset_otp, reset_otp_created_at, reset_otp_attempts FROM users WHERE email = ?", (email,)
         ).fetchone()
         if not row or not row["reset_otp"]:
             raise HTTPException(status_code=400, detail="Please request a reset code first.")
@@ -676,9 +737,19 @@ def verify_reset_otp(payload: VerifyResetOTP, request: Request):
         if now_utc() > created_time + timedelta(minutes=OTP_EXPIRY_MINUTES):
             raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
         if row["reset_otp"] != otp:
+            attempts = (row["reset_otp_attempts"] or 0) + 1
+            if attempts >= MAX_OTP_ATTEMPTS:
+                cursor.execute(
+                    "UPDATE users SET reset_otp=NULL, reset_otp_created_at=NULL, reset_otp_attempts=0, updated_at=? WHERE id=?",
+                    (now_utc_str(), row["id"]))
+                conn.commit()
+                raise HTTPException(status_code=400, detail="Too many incorrect attempts — please request a new code.")
+            cursor.execute("UPDATE users SET reset_otp_attempts=?, updated_at=? WHERE id=?",
+                           (attempts, now_utc_str(), row["id"]))
+            conn.commit()
             raise HTTPException(status_code=400, detail="Incorrect code.")
 
-        cursor.execute("UPDATE users SET reset_verified=1, updated_at=? WHERE id=?", (now_utc_str(), row["id"]))
+        cursor.execute("UPDATE users SET reset_verified=1, reset_otp_attempts=0, updated_at=? WHERE id=?", (now_utc_str(), row["id"]))
         conn.commit()
         return {"message": "Code verified. You can now set a new password."}
     finally:
@@ -2306,7 +2377,8 @@ def execute_code(payload: ExecuteCodeRequest, request: Request, authorization: O
                 "Authorization": "Bearer " + runner_secret,
                 "Content-Type": "application/json",
             },
-            timeout=15,  # slightly more than MAX_EXECUTION_TIME_MS
+            # execution time (MAX_EXECUTION_TIME_MS) + auto pip-install budget
+            timeout=130,
         )
     except requests.ConnectionError:
         logger.error("Runner service unreachable at %s", runner_url)
@@ -2334,6 +2406,276 @@ def execute_code(payload: ExecuteCodeRequest, request: Request, authorization: O
     # Pass through stdout/stderr/exit_code/execution_time to the user.
     # The runner URL and secret are NEVER in this response.
     return result
+
+
+# ================================
+# ALWAYS-ON JOBS (24/7 background tasks — mini PythonAnywhere)
+# ================================
+# Job DEFINITIONS live in our DB (survive runner restarts); the PROCESSES run
+# inside the runner service. Same secret, same proxy pattern as /api/execute.
+
+MAX_JOBS_PER_USER = 3  # free tier guardrail
+
+
+class JobCreateRequest(BaseModel):
+    name: str
+    language: str
+    code: str
+
+
+def _runner_http(method: str, path: str, json_body=None):
+    """Call the runner service with the shared secret; map every transport
+    failure to a clean HTTPException the frontend can display."""
+    runner_url = os.getenv("RUNNER_SERVICE_URL", "").strip().rstrip("/")
+    runner_secret = os.getenv("RUNNER_SERVICE_SECRET", "").strip()
+    if not runner_url or not runner_secret:
+        raise HTTPException(status_code=503, detail="Jobs are not configured. Set RUNNER_SERVICE_URL and RUNNER_SERVICE_SECRET.")
+    try:
+        return requests.request(
+            method, runner_url + path,
+            json=json_body,
+            headers={"Authorization": "Bearer " + runner_secret},
+            timeout=20,
+        )
+    except requests.ConnectionError:
+        raise HTTPException(status_code=503, detail="Job service is waking up or unreachable — try again in 30 seconds.")
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Job service took too long to respond.")
+
+
+def _get_own_job(job_id: int, user: dict) -> dict:
+    """Fetch a job row owned by this user or 404."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user["id"])).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return dict(row)
+
+
+@app.post("/api/jobs")
+def create_job(payload: JobCreateRequest, request: Request, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    rate_limit(f"{client_ip(request)}:exec")
+
+    name = payload.name.strip()[:60]
+    if not name:
+        raise HTTPException(status_code=422, detail="Give the job a name.")
+
+    conn = get_db_connection()
+    try:
+        cnt = conn.execute("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?", (user["id"],)).fetchone()
+        if (dict(cnt)["c"] if cnt else 0) >= MAX_JOBS_PER_USER:
+            raise HTTPException(status_code=429, detail=f"Max {MAX_JOBS_PER_USER} jobs per account (free tier).")
+    except HTTPException:
+        conn.close()
+        raise
+    conn.close()
+
+    resp = _runner_http("POST", "/internal/jobs", {
+        "language": payload.language, "code": payload.code,
+        "name": f"u{user['id']}-{name}",
+    })
+    if resp.status_code == 201:
+        info = resp.json()
+    elif resp.status_code in (401, 403):
+        raise HTTPException(status_code=500, detail="Runner secret mismatch. Contact admin.")
+    else:
+        try:
+            detail = resp.json().get("detail", "Runner rejected the job.")
+        except Exception:
+            detail = "Runner rejected the job."
+        raise HTTPException(status_code=resp.status_code if 400 <= resp.status_code < 500 else 502, detail=detail)
+
+    now = now_utc_str()
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO jobs (user_id, name, language, code, runner_job_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user["id"], name, payload.language, payload.code, info["id"], now, now),
+        )
+        conn.commit()
+        info["job_db_id"] = cursor.lastrowid
+        return info
+    finally:
+        conn.close()
+
+
+@app.get("/api/jobs")
+def list_jobs(authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY id DESC", (user["id"],)).fetchall()
+    finally:
+        conn.close()
+
+    # Live status from the runner — best effort (it may be asleep/restarted).
+    live, runner_state = {}, "ok"
+    try:
+        resp = _runner_http("GET", "/internal/jobs")
+        if resp.status_code == 200:
+            live = {j["id"]: j for j in resp.json().get("jobs", [])}
+        else:
+            runner_state = "unreachable"
+    except HTTPException as e:
+        runner_state = e.detail
+
+    jobs = []
+    for r in rows:
+        r = dict(r)
+        rid = r.get("runner_job_id")
+        if rid and rid in live:
+            info = live[rid]
+            r.update({"status": info["status"], "uptime_s": info.get("uptime_s", 0), "restarts": info.get("restarts", 0)})
+        else:
+            r.update({"status": "offline", "uptime_s": 0, "restarts": 0})
+        r.pop("code", None)  # never ship stored code back in list payloads
+        jobs.append(r)
+    return {"jobs": jobs, "runner": runner_state, "max_per_user": MAX_JOBS_PER_USER}
+
+
+@app.get("/api/jobs/{job_id}/logs")
+def job_logs(job_id: int, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    row = _get_own_job(job_id, user)
+    rid = row.get("runner_job_id")
+    if not rid:
+        return {"status": "offline", "logs": "(never started)"}
+    resp = _runner_http("GET", f"/internal/jobs/{rid}")
+    if resp.status_code == 404:
+        return {"status": "offline", "logs": "(runner restarted — press ▶ Restart to relaunch)"}
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Could not fetch logs from runner.")
+    info = resp.json()
+    return {"status": info.get("status"), "logs": info.get("logs", ""), "uptime_s": info.get("uptime_s", 0), "restarts": info.get("restarts", 0)}
+
+
+@app.get("/api/jobs/{job_id}/logs/stream")
+async def job_logs_stream(job_id: int, token: Optional[str] = None):
+    """Server-Sent Events: push a job's logs to the dashboard in real time.
+
+    EventSource can't send Authorization headers, so the session token comes
+    as a ?token= query param; we validate it against the sessions table the
+    same way get_current_user_and_session does.
+    """
+    token = (token or "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    conn = get_db_connection()
+    try:
+        session_row = conn.execute("SELECT * FROM sessions WHERE token = ?", (token,)).fetchone()
+        if not session_row:
+            raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+        user_row = conn.execute("SELECT * FROM users WHERE id = ?", (session_row["user_id"],)).fetchone()
+        if not user_row:
+            raise HTTPException(status_code=401, detail="Account not found.")
+    finally:
+        conn.close()
+
+    row = _get_own_job(job_id, user_row)
+    rid = row.get("runner_job_id")
+
+    async def gen():
+        last = None
+        while True:
+            info = None
+            if rid:
+                try:
+                    resp = await asyncio.to_thread(_runner_http, "GET", f"/internal/jobs/{rid}")
+                    if resp.status_code == 200:
+                        info = resp.json()
+                except Exception:
+                    info = None
+            payload = {
+                "status": (info or {}).get("status", "offline"),
+                "logs": (info or {}).get("logs", "(runner unreachable — retrying…)"),
+                "uptime_s": (info or {}).get("uptime_s", 0),
+                "restarts": (info or {}).get("restarts", 0),
+            }
+            blob = json.dumps(payload, ensure_ascii=False)
+            if blob != last:
+                last = blob
+                yield f"data: {blob}\n\n"
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/jobs/{job_id}/stop")
+def stop_job(job_id: int, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    row = _get_own_job(job_id, user)
+    rid = row.get("runner_job_id")
+    if rid:
+        resp = _runner_http("POST", f"/internal/jobs/{rid}/stop")
+        if resp.status_code not in (200, 404):
+            raise HTTPException(status_code=502, detail="Runner refused to stop the job.")
+    return {"status": "stopped"}
+
+
+@app.post("/api/jobs/{job_id}/restart")
+def restart_job(job_id: int, request: Request, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    rate_limit(f"{client_ip(request)}:exec")
+    row = _get_own_job(job_id, user)
+
+    rid = row.get("runner_job_id")
+    if rid:
+        try:
+            _runner_http("POST", f"/internal/jobs/{rid}/stop")
+        except HTTPException:
+            pass  # old copy may already be gone (runner restart) — fine
+
+    resp = _runner_http("POST", "/internal/jobs", {
+        "language": row["language"], "code": row["code"],
+        "name": f"u{user['id']}-{row['name']}",
+    })
+    if resp.status_code == 201:
+        info = resp.json()
+    else:
+        try:
+            detail = resp.json().get("detail", "Runner rejected the job.")
+        except Exception:
+            detail = "Runner rejected the job."
+        raise HTTPException(status_code=502, detail=detail)
+
+    conn = get_db_connection()
+    try:
+        conn.execute("UPDATE jobs SET runner_job_id = ?, updated_at = ? WHERE id = ?", (info["id"], now_utc_str(), job_id))
+        conn.commit()
+    finally:
+        conn.close()
+    info["job_db_id"] = job_id
+    return info
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: int, authorization: Optional[str] = Header(None)):
+    user, _ = get_current_user_and_session(authorization)
+    row = _get_own_job(job_id, user)
+    rid = row.get("runner_job_id")
+    if rid:
+        try:
+            _runner_http("POST", f"/internal/jobs/{rid}/stop")
+        except HTTPException:
+            pass  # best effort
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"message": "Job deleted."}
 
 
 # ================================

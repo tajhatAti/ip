@@ -60,6 +60,66 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 # managed (SSL) hosts as well as a local no-SSL dev server.
 PG_SSLMODE = os.getenv("PG_SSLMODE", "prefer")
 
+# ---------------------------------------------------------------------------
+# DATABASE_URL sanity check
+# ---------------------------------------------------------------------------
+# A malformed DATABASE_URL makes psycopg2 fail deep inside libpq with a cryptic
+# DNS-style error ("could not translate host name \"<garbage>\" to address").
+# The most common cause: the password contains raw special characters ('#',
+# '@', spaces) that were not percent-encoded, so the URL parser glues password
+# fragments onto the hostname. Catch that HERE, at startup, and fail with an
+# actionable message instead of a 50-line stack trace.
+def _validate_database_url(url: str) -> None:
+    from urllib.parse import urlparse
+
+    problems: list[str] = []
+
+    # 1) Accidental whitespace/newlines from copy-pasting into dashboards.
+    if any(ch.isspace() for ch in url):
+        problems.append("contains whitespace (accidental space/newline while copy-pasting?)")
+
+    # 2) A raw '#' truncates the URL at the fragment marker and silently eats
+    #    the rest of the password. In a valid URL it only appears as %23.
+    if "#" in url:
+        problems.append("raw '#' found in the URL — encode it as %23 (password character)")
+
+    # 3) More than one '@' means the password holds an unencoded '@'.
+    if url.split("://", 1)[-1].count("@") > 1:
+        problems.append("more than one '@' found — encode '@' inside the password as %40")
+
+    # 4) Structural checks: scheme, hostname, port, password.
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname            # may raise ValueError on bad port
+        _ = parsed.port
+        if not host:
+            problems.append("no hostname found (expected e.g. 'xyz.pooler.supabase.com')")
+        if parsed.password is None:
+            problems.append("no password found (expected form: postgresql://user:PASSWORD@host:5432/db)")
+    except ValueError as exc:
+        problems.append(f"cannot be parsed ({exc})")
+
+    if problems:
+        bullet_list = "\n".join(f"    * {p}" for p in problems)
+        raise RuntimeError(
+            "\n\n"
+            "==============================================================\n"
+            "  DATABASE_URL looks malformed — refusing to start.\n"
+            "--------------------------------------------------------------\n"
+            f"{bullet_list}\n\n"
+            "  Fix: copy the exact connection string from your provider\n"
+            "  (Supabase -> Project Settings -> Database -> Session pooler)\n"
+            "  and percent-encode special characters in the PASSWORD:\n"
+            "      #  ->  %23        @  ->  %40        space  ->  %20\n"
+            "  (পাসওয়ার্ডে #, @ বা স্পেস থাকলে অবশ্যই encode করতে হবে।)\n"
+            "  Example:\n"
+            "      postgresql://postgres.REF:ENCODED_PASSWORD@HOST:5432/postgres\n"
+            "==============================================================\n"
+        )
+
+if DIALECT == "postgres":
+    _validate_database_url(_DATABASE_URL)
+
 logger.info("Database dialect: %s", DIALECT)
 
 # ---------------------------------------------------------------------------
@@ -289,6 +349,8 @@ _SCHEMA_TABLES = [
         reset_otp TEXT,
         reset_otp_created_at TEXT,
         reset_verified INTEGER NOT NULL DEFAULT 0,
+        otp_attempts INTEGER NOT NULL DEFAULT 0,
+        reset_otp_attempts INTEGER NOT NULL DEFAULT 0,
         role TEXT NOT NULL DEFAULT 'user',
         phone TEXT,
         custom_code TEXT,
@@ -404,6 +466,19 @@ _SCHEMA_TABLES = [
         key_hash TEXT NOT NULL,
         last_used TEXT,
         created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        language TEXT NOT NULL,
+        code TEXT NOT NULL,
+        runner_job_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     )
     """,
@@ -574,6 +649,12 @@ def init_db():
         # Legacy-DB migration: ensure the `role` column exists on users.
         if not _column_exists(conn, "users", "role"):
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+
+        # Wrong-OTP-attempt counters (server-side OTP rate limiting).
+        if not _column_exists(conn, "users", "otp_attempts"):
+            conn.execute("ALTER TABLE users ADD COLUMN otp_attempts INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "users", "reset_otp_attempts"):
+            conn.execute("ALTER TABLE users ADD COLUMN reset_otp_attempts INTEGER NOT NULL DEFAULT 0")
 
         conn.commit()
     finally:
